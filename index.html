@@ -11,7 +11,7 @@ canvas { display:block; background:#cce7ff; }
   display:flex; align-items:center; justify-content:center; flex-direction:column;
   font-family:Calibri, sans-serif; color:white; font-size:24px;
 }
-#nameInput { padding:10px; font-size:20px; border-radius:8px; border:none; }
+#nameInput,#colorInput { padding:10px; font-size:20px; border-radius:8px; border:none; margin-top:5px; }
 #playBtn { padding:10px 20px; margin-top:10px; background:#4CAF50; color:white; border:none; border-radius:8px; font-size:20px; cursor:pointer; }
 #leaderboard {
   position:fixed; top:10px; right:10px; color:white; font-family:Calibri, sans-serif; font-size:16px;
@@ -22,7 +22,8 @@ canvas { display:block; background:#cce7ff; }
 <body>
 <div id="namePopup">
   <div>Enter your name</div>
-  <input id="nameInput" maxlength="16" />
+  <input id="nameInput" maxlength="16" placeholder="Name" />
+  <input id="colorInput" type="color" value="#ffffff"/>
   <button id="playBtn">Play</button>
 </div>
 <canvas id="game"></canvas>
@@ -34,7 +35,7 @@ const ctx=canvas.getContext("2d");
 
 const MAP_SIZE=5000, BOT_COUNT=20, FOOD_COUNT=7000, BORDER=50;
 
-let keys={}, player=null, bots=[], food=[];
+let keys={}, player=null, bots=[], food=[], projectiles=[], splitCells=[];
 
 // Utils
 function rand(min,max){return Math.random()*(max-min)+min;}
@@ -42,7 +43,7 @@ function randColor(){return `hsl(${rand(0,360)},50%,70%)`;}
 function randName(){const l=["Bot1","Bot2","Bot3","Bot4","Bot5"]; return l[Math.floor(Math.random()*l.length)];}
 
 // Entities
-function createPlayer(name){return {name,x:MAP_SIZE/2,y:MAP_SIZE/2,size:40,color:"#ffffff",speed:3};}
+function createPlayer(name,color){return {name,x:MAP_SIZE/2,y:MAP_SIZE/2,size:40,color:color||"#ffffff",speed:3};}
 function createBot(){return {name:randName(),x:rand(0,MAP_SIZE),y:rand(0,MAP_SIZE),size:rand(30,70),color:randColor(),speed:1.2};}
 function createFood(){return {x:rand(0,MAP_SIZE),y:rand(0,MAP_SIZE),size:rand(3,6),color:randColor()};}
 
@@ -65,6 +66,23 @@ function update(){
   if(keys['s']) player.y+=speed;
   if(keys['a']) player.x-=speed;
   if(keys['d']) player.x+=speed;
+
+  // Eject
+  if(keys['e']){
+    keys['e']=false; // single press
+    let angle = 0; // forward direction
+    projectiles.push({x:player.x,y:player.y,size:player.size*0.1,vx:Math.cos(angle)*10,vy:Math.sin(angle)*10});
+    player.size -= player.size*0.1;
+  }
+
+  // Split
+  if(keys[' ']){
+    keys[' ']=false;
+    let angle=0; // forward
+    let newSize=player.size/2;
+    splitCells.push({x:player.x,y:player.y,size:newSize,vx:Math.cos(angle)*10,vy:Math.sin(angle)*10});
+    player.size=newSize;
+  }
 
   // Eat food
   for(let i=food.length-1;i>=0;i--){
@@ -94,9 +112,38 @@ function update(){
     let d=Math.hypot(player.x-b.x,player.y-b.y);
     if(d<player.size+b.size){
       if(player.size>b.size*1.1){player.size+=b.size*0.4; Object.assign(b,createBot());}
-      else if(b.size>player.size*1.1){ Object.assign(player,createPlayer(player.name)); }
+      else if(b.size>player.size*1.1){ Object.assign(player,createPlayer(player.name,player.color)); }
     }
   });
+
+  // Move split cells
+  for(let i=splitCells.length-1;i>=0;i--){
+    let c=splitCells[i];
+    c.x+=c.vx; c.y+=c.vy;
+    // Eat bots
+    for(let j=bots.length-1;j>=0;j--){
+      let b=bots[j];
+      let d=Math.hypot(c.x-b.x,c.y-b.y);
+      if(d<c.size+b.size){
+        if(c.size>b.size){c.size+=b.size*0.4; Object.assign(b,createBot()); splitCells.splice(i,1); break;}
+        else {b.size+=c.size; splitCells.splice(i,1); break;}
+      }
+    }
+  }
+
+  // Move projectiles
+  for(let i=projectiles.length-1;i>=0;i--){
+    let p=projectiles[i];
+    p.x+=p.vx; p.y+=p.vy;
+    // Hit bots
+    for(let j=bots.length-1;j>=0;j--){
+      let b=bots[j];
+      if(Math.hypot(p.x-b.x,p.y-b.y)<p.size+b.size){
+        if(p.size>b.size){player.size+=b.size*0.4; Object.assign(b,createBot()); projectiles.splice(i,1); break;}
+        else {b.size+=p.size; projectiles.splice(i,1); break;}
+      }
+    }
+  }
 
   // Borders damage
   if(player.x<BORDER||player.x>MAP_SIZE-BORDER||player.y<BORDER||player.y>MAP_SIZE-BORDER){
@@ -142,6 +189,18 @@ function draw(){
     ctx.fillText(b.name,b.x+offsetX,b.y+offsetY+5);
   });
 
+  // Split cells
+  splitCells.forEach(c=>{
+    ctx.fillStyle=player.color; ctx.beginPath();
+    ctx.arc(c.x+offsetX,c.y+offsetY,c.size,0,Math.PI*2); ctx.fill();
+  });
+
+  // Projectiles
+  projectiles.forEach(p=>{
+    ctx.fillStyle=player.color; ctx.beginPath();
+    ctx.arc(p.x+offsetX,p.y+offsetY,p.size,0,Math.PI*2); ctx.fill();
+  });
+
   // Player
   ctx.fillStyle=player.color; ctx.beginPath();
   ctx.arc(canvas.width/2,canvas.height/2,player.size,0,Math.PI*2); ctx.fill();
@@ -161,7 +220,8 @@ function loop(){ update(); draw(); requestAnimationFrame(loop); }
 document.getElementById("playBtn").onclick=()=>{
   let name=document.getElementById("nameInput").value.trim();
   if(!name) return;
-  player=createPlayer(name);
+  let color=document.getElementById("colorInput").value;
+  player=createPlayer(name,color);
   document.getElementById("namePopup").style.display="none";
   init();
   loop();
