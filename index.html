@@ -13,6 +13,7 @@ canvas { display:block; }
 #nameInput { padding:10px; font-size:20px; border-radius:6px; border:none; }
 #playBtn { padding:10px 20px; margin-top:10px; background:#4CAF50; border:none; border-radius:6px; cursor:pointer; font-size:20px; color:white; }
 #leaderboard { position:absolute; top:20px; left:20px; background:rgba(0,0,0,0.5); padding:10px; border-radius:8px; font-size:16px; color:white; }
+#minimap { position:absolute; bottom:20px; right:20px; background:rgba(0,0,0,0.3); border:2px solid white; }
 </style>
 </head>
 <body>
@@ -23,14 +24,18 @@ canvas { display:block; }
 </div>
 <div id="leaderboard"></div>
 <canvas id="game"></canvas>
+<canvas id="minimap" width="200" height="150"></canvas>
 <script>
 const canvas=document.getElementById("game"), ctx=canvas.getContext("2d");
 canvas.width=window.innerWidth; canvas.height=window.innerHeight;
 
-const MAP_SIZE=3000, FOOD_COUNT=2000, BOT_COUNT=10;
+const miniCanvas=document.getElementById("minimap"), miniCtx=miniCanvas.getContext("2d");
+
+const MAP_SIZE=3000, FOOD_COUNT=2000, BOT_COUNT=15;
 const BORDER_THICKNESS = 30;
 
 let player=null, bots=[], food=[], splitCells=[], keys={}, mouseX=0, mouseY=0;
+let camera={x:0,y:0}; // for smoothing
 
 // helpers
 const rand=(min,max)=>Math.random()*(max-min)+min;
@@ -53,14 +58,20 @@ window.addEventListener("mousemove",e=>mouseX=e.clientX,mouseY=e.clientY);
 
 function updatePlayer(){
   if(!player) return;
-
-  // speed decreases as player grows
-  const speed = 7 / Math.sqrt(player.size/40); 
+  const speed = 7 / Math.sqrt(player.size/40);
 
   if(keys['w']) player.y-=speed;
   if(keys['s']) player.y+=speed;
   if(keys['a']) player.x-=speed;
   if(keys['d']) player.x+=speed;
+
+  // cursor movement dominance if no WASD
+  if(!(keys['w']||keys['a']||keys['s']||keys['d'])){
+    let dx = mouseX-canvas.width/2;
+    let dy = mouseY-canvas.height/2;
+    let dist = Math.hypot(dx,dy);
+    if(dist>1){ dx/=dist; dy/=dist; player.x+=dx*speed; player.y+=dy*speed; }
+  }
 
   // eat food
   for(let i=food.length-1;i>=0;i--){
@@ -85,7 +96,7 @@ function updatePlayer(){
   if(player.x>MAP_SIZE-BORDER_THICKNESS){ player.x=MAP_SIZE-BORDER_THICKNESS; player.size-=0.3; }
   if(player.y>MAP_SIZE-BORDER_THICKNESS){ player.y=MAP_SIZE-BORDER_THICKNESS; player.size-=0.3; }
 
-  if(player.size<10) player=createPlayer(player.name); // respawn if too small
+  if(player.size<10) player=createPlayer(player.name);
 }
 
 function updateBots(){
@@ -99,7 +110,6 @@ function updateBots(){
   });
 }
 
-// split cells and ejects
 function handleSplitAndEject(){
   // SPACE to split
   if(keys[' ']){
@@ -109,12 +119,11 @@ function handleSplitAndEject(){
       splitCells.push({x:player.x,y:player.y,size:newSize,vx:Math.cos(angle)*20,vy:Math.sin(angle)*20,color:player.color});
       player.size=newSize;
     }
-    keys[' ']=false; // prevent continuous splitting
+    keys[' ']=false;
   }
   // E to eject
   if(keys['e']){
-    // simple eject effect: just subtract size slightly
-    player.size-=Math.min(5, player.size*0.1);
+    player.size-=Math.min(5,player.size*0.1);
     keys['e']=false;
   }
 
@@ -122,7 +131,8 @@ function handleSplitAndEject(){
   for(let i=splitCells.length-1;i>=0;i--){
     const c=splitCells[i];
     c.x+=c.vx; c.y+=c.vy;
-    c.vx*=0.95; c.vy*=0.95; // friction
+    c.vx*=0.95; c.vy*=0.95;
+
     // collide with bots
     for(let j=bots.length-1;j>=0;j--){
       const b=bots[j];
@@ -144,18 +154,34 @@ function drawLeaderboard(){
   lb.innerHTML=html;
 }
 
-function loop(){
-  updatePlayer(); updateBots(); handleSplitAndEject(); draw(); drawLeaderboard();
-  requestAnimationFrame(loop);
+function drawMinimap(){
+  const w=miniCanvas.width, h=miniCanvas.height;
+  miniCtx.setTransform(1,0,0,1,0,0);
+  miniCtx.clearRect(0,0,w,h);
+  miniCtx.fillStyle="rgba(255,255,255,0.3)";
+  miniCtx.fillRect(0,0,w,h);
+
+  const scaleX=w/MAP_SIZE, scaleY=h/MAP_SIZE;
+  // food
+  food.forEach(f=>{ miniCtx.fillStyle=f.color; miniCtx.fillRect(f.x*scaleX,f.y*scaleY,2,2); });
+  // bots
+  bots.forEach(b=>{ miniCtx.fillStyle=b.color; miniCtx.fillRect(b.x*scaleX,b.y*scaleY,4,4); });
+  // player
+  miniCtx.fillStyle=player.color; miniCtx.fillRect(player.x*scaleX-3,player.y*scaleY-3,6,6);
 }
 
 function draw(){
   if(!player) return;
+
+  // smooth camera
+  camera.x += (player.x - camera.x)*0.1;
+  camera.y += (player.y - camera.y)*0.1;
+
   ctx.setTransform(1,0,0,1,0,0);
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
   const zoom=200/player.size;
-  ctx.setTransform(zoom,0,0,zoom,canvas.width/2-player.x*zoom,canvas.height/2-player.y*zoom);
+  ctx.setTransform(zoom,0,0,zoom,canvas.width/2-camera.x*zoom,canvas.height/2-camera.y*zoom);
 
   // borders
   ctx.strokeStyle="red"; ctx.lineWidth=BORDER_THICKNESS*zoom;
@@ -178,6 +204,13 @@ function draw(){
   // player
   ctx.fillStyle=player.color; ctx.beginPath(); ctx.arc(player.x,player.y,player.size,0,Math.PI*2); ctx.fill();
   ctx.fillStyle="white"; ctx.font=`${player.size/2}px Calibri`; ctx.textAlign="center"; ctx.fillText(player.name,player.x,player.y+5);
+
+  drawMinimap();
+}
+
+function loop(){
+  updatePlayer(); updateBots(); handleSplitAndEject(); draw(); drawLeaderboard();
+  requestAnimationFrame(loop);
 }
 
 document.getElementById("playBtn").onclick=()=>{
@@ -190,4 +223,5 @@ document.getElementById("playBtn").onclick=()=>{
 </script>
 </body>
 </html>
+
 
