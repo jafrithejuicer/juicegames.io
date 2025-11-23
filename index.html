@@ -33,7 +33,6 @@ canvas.width = 900; canvas.height = 600;
 canvas.focus();
 const ctx = canvas.getContext("2d");
 
-let mouseX = 0, mouseY = 0;
 let keys = {};
 let player = null;
 let bots = [];
@@ -59,11 +58,10 @@ function init(){
 }
 
 // Input
-window.addEventListener("mousemove", e=>{ mouseX=e.clientX; mouseY=e.clientY; });
 window.addEventListener("keydown", e=>keys[e.key.toLowerCase()]=true);
 window.addEventListener("keyup", e=>keys[e.key.toLowerCase()]=false);
-canvas.addEventListener("click", ()=>canvas.focus());
 
+// Projectiles for eject
 const projectiles = [];
 const splitCells = [];
 
@@ -71,19 +69,17 @@ const splitCells = [];
 function update(){
   if(!player) return;
 
-  // Movement
-  let speed = player.speed * (40/player.size); // bigger = slower
-  let dx=0, dy=0;
-  if(keys['w']) dy-=speed;
-  if(keys['s']) dy+=speed;
-  if(keys['a']) dx-=speed;
-  if(keys['d']) dx+=speed;
-  player.x += dx; player.y += dy;
+  // Movement: slower as bigger
+  let speed = player.speed * (40/player.size);
+  if(keys['w']) player.y -= speed;
+  if(keys['s']) player.y += speed;
+  if(keys['a']) player.x -= speed;
+  if(keys['d']) player.x += speed;
 
-  // Food collision
+  // Eat food
   for(let i=food.length-1;i>=0;i--){
     const f = food[i];
-    if(Math.hypot(player.x-f.x, player.y-f.y)<player.size+f.size){
+    if(Math.hypot(player.x-f.x, player.y-f.y) < player.size + f.size){
       player.size += f.size*0.3;
       food.splice(i,1);
     }
@@ -94,26 +90,28 @@ function update(){
     let angle = Math.random()*Math.PI*2;
     b.x += Math.cos(angle)*b.speed;
     b.y += Math.sin(angle)*b.speed;
+
     // Eat food
     for(let i=food.length-1;i>=0;i--){
-      if(Math.hypot(b.x-food[i].x,b.y-food[i].y)<b.size+food[i].size){
+      if(Math.hypot(b.x-food[i].x, b.y-food[i].y) < b.size + food[i].size){
         b.size += food[i].size*0.35;
         food.splice(i,1);
       }
     }
+
     // Eat player
     let dist = Math.hypot(player.x-b.x, player.y-b.y);
-    if(dist<player.size+b.size){
-      if(player.size>b.size*1.1){ player.size+=b.size*0.4; Object.assign(b,createBot()); }
-      else if(b.size>player.size*1.1){ Object.assign(player,createPlayer(player.name)); }
+    if(dist < player.size + b.size){
+      if(player.size > b.size*1.1){ player.size += b.size*0.4; Object.assign(b, createBot()); }
+      else if(b.size > player.size*1.1){ Object.assign(player, createPlayer(player.name)); }
     }
   });
 
   // Border damage
-  if(player.x<BORDER_THICKNESS) player.size-=0.1;
-  if(player.x>MAP_SIZE-BORDER_THICKNESS) player.size-=0.1;
-  if(player.y<BORDER_THICKNESS) player.size-=0.1;
-  if(player.y>MAP_SIZE-BORDER_THICKNESS) player.size-=0.1;
+  if(player.x<BORDER_THICKNESS) player.size -= 0.1;
+  if(player.x>MAP_SIZE-BORDER_THICKNESS) player.size -= 0.1;
+  if(player.y<BORDER_THICKNESS) player.size -= 0.1;
+  if(player.y>MAP_SIZE-BORDER_THICKNESS) player.size -= 0.1;
 
   // Keep player in map
   player.x=Math.max(0,Math.min(MAP_SIZE,player.x));
@@ -124,36 +122,42 @@ function update(){
 function draw(){
   if(!player) return;
 
-  // Clear
   ctx.setTransform(1,0,0,1,0,0);
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  // Zoom
-  let zoom = 200/player.size;
-  ctx.setTransform(zoom,0,0,zoom,canvas.width/2-player.x*zoom,canvas.height/2-player.y*zoom);
+  const offsetX = canvas.width/2 - player.x;
+  const offsetY = canvas.height/2 - player.y;
 
   // Borders
   ctx.fillStyle="red";
-  ctx.fillRect(0,0,BORDER_THICKNESS,MAP_SIZE);
-  ctx.fillRect(MAP_SIZE-BORDER_THICKNESS,0,BORDER_THICKNESS,MAP_SIZE);
-  ctx.fillRect(0,0,MAP_SIZE,BORDER_THICKNESS);
-  ctx.fillRect(0,MAP_SIZE-BORDER_THICKNESS,MAP_SIZE,BORDER_THICKNESS);
+  ctx.fillRect(0 + offsetX,0 + offsetY,BORDER_THICKNESS,MAP_SIZE);
+  ctx.fillRect(MAP_SIZE-BORDER_THICKNESS + offsetX,0,BORDER_THICKNESS,MAP_SIZE);
+  ctx.fillRect(0,0 + offsetY,MAP_SIZE,BORDER_THICKNESS);
+  ctx.fillRect(0,MAP_SIZE-BORDER_THICKNESS + offsetY,MAP_SIZE,BORDER_THICKNESS);
 
   // Food
   food.forEach(f=>{
     ctx.fillStyle=f.color;
-    ctx.beginPath(); ctx.arc(f.x,f.y,f.size,0,Math.PI*2); ctx.fill();
+    ctx.beginPath();
+    ctx.arc(f.x + offsetX, f.y + offsetY, f.size,0,Math.PI*2);
+    ctx.fill();
   });
 
   // Bots
   bots.forEach(b=>{
-    ctx.fillStyle=b.color; ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle="white"; ctx.font=`${b.size/2}px Calibri`; ctx.textAlign="center"; ctx.fillText(b.name,b.x,b.y+5);
+    ctx.fillStyle=b.color; ctx.beginPath();
+    ctx.arc(b.x + offsetX, b.y + offsetY, b.size,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="white"; ctx.font=`${b.size/2}px Calibri`;
+    ctx.textAlign="center";
+    ctx.fillText(b.name, b.x + offsetX, b.y + offsetY +5);
   });
 
   // Player
-  ctx.fillStyle=player.color; ctx.beginPath(); ctx.arc(player.x,player.y,player.size,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle="white"; ctx.font=`${player.size/2}px Calibri`; ctx.textAlign="center"; ctx.fillText(player.name,player.x,player.y+5);
+  ctx.fillStyle=player.color; ctx.beginPath();
+  ctx.arc(canvas.width/2, canvas.height/2, player.size,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle="white"; ctx.font=`${player.size/2}px Calibri`;
+  ctx.textAlign="center";
+  ctx.fillText(player.name, canvas.width/2, canvas.height/2 +5);
 
   // Leaderboard
   const leaderboard=document.getElementById("leaderboard");
@@ -166,7 +170,7 @@ function loop(){ update(); draw(); requestAnimationFrame(loop); }
 // Play button
 document.getElementById("playBtn").onclick = ()=>{
   let name=document.getElementById("nameInput").value.trim();
-  if(name.length<1) return;
+  if(!name) return;
   player=createPlayer(name);
   document.getElementById("namePopup").style.display="none";
   init();
@@ -175,4 +179,3 @@ document.getElementById("playBtn").onclick = ()=>{
 </script>
 </body>
 </html>
-
