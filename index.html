@@ -42,9 +42,9 @@ function randColor(){return `hsl(${rand(0,360)},50%,70%)`;}
 function randName(){const l=["Bot1","Bot2","Bot3","Bot4","Bot5"]; return l[Math.floor(Math.random()*l.length)];}
 
 // Entities
-function createPlayer(name){return {name,x:MAP_SIZE/2,y:MAP_SIZE/2,size:40,color:"#fff",speed:3};}
-function createBot(){return {name:randName(),x:rand(0,MAP_SIZE),y:rand(0,MAP_SIZE),size:rand(80,200),color:randColor(),speed:1.2};}
-function createFood(){return {x:rand(0,MAP_SIZE),y:rand(0,MAP_SIZE),size:rand(3,8),color:randColor()};}
+function createPlayer(name){return {name,x:MAP_SIZE/2,y:MAP_SIZE/2,size:40,color:"#ffffff",speed:3};}
+function createBot(){return {name:randName(),x:rand(0,MAP_SIZE),y:rand(0,MAP_SIZE),size:rand(30,70),color:randColor(),speed:1.2};}
+function createFood(){return {x:rand(0,MAP_SIZE),y:rand(0,MAP_SIZE),size:rand(3,6),color:randColor()};}
 
 // Init
 function init(){
@@ -60,7 +60,7 @@ window.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
 function update(){
   if(!player) return;
 
-  let speed = player.speed*(40/player.size);
+  let speed = player.speed*(40/player.size); // bigger slower
   if(keys['w']) player.y-=speed;
   if(keys['s']) player.y+=speed;
   if(keys['a']) player.x-=speed;
@@ -98,12 +98,12 @@ function update(){
     }
   });
 
-  // Borders
+  // Borders damage
   if(player.x<BORDER||player.x>MAP_SIZE-BORDER||player.y<BORDER||player.y>MAP_SIZE-BORDER){
     player.size-=0.1;
   }
 
-  // Clamp
+  // Clamp player
   player.x=Math.max(0,Math.min(MAP_SIZE,player.x));
   player.y=Math.max(0,Math.min(MAP_SIZE,player.y));
 }
@@ -114,6 +114,7 @@ function draw(){
 
   ctx.setTransform(1,0,0,1,0,0);
   ctx.clearRect(0,0,canvas.width,canvas.height);
+
   const offsetX=canvas.width/2-player.x;
   const offsetY=canvas.height/2-player.y;
 
