@@ -2,143 +2,177 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Agar.io Clone</title>
+<title>Juice Games .io</title>
 <style>
-html, body { margin:0; padding:0; overflow:hidden; background:#b7dcff; font-family:Calibri,sans-serif; }
-canvas { display:block; }
-#namePopup {
-  position:fixed; top:0; left:0; width:100%; height:100%;
-  background:rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center;
-  flex-direction:column; color:white; font-size:24px;
-}
-#nameInput { padding:10px; font-size:20px; border-radius:6px; border:none; }
-#playBtn { padding:10px 20px; margin-top:10px; background:#4CAF50; border:none; border-radius:6px; cursor:pointer; font-size:20px; color:white; }
+  html, body { margin:0; padding:0; overflow:hidden; background:#b7dcff; }
+  canvas { display:block; background:#b7dcff; }
+  #namePopup {
+    position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7);
+    display:flex; align-items:center; justify-content:center; flex-direction:column;
+    font-family:Calibri, sans-serif; color:white; font-size:24px;
+  }
+  #nameInput { padding:10px; font-size:20px; border-radius:8px; border:none; }
+  #playBtn { padding:10px 20px; margin-top:10px; background:#4CAF50; color:white; border:none; border-radius:8px; font-size:20px; cursor:pointer; }
+  #leaderboard {
+    position:fixed; top:10px; right:10px; color:white; font-family:Calibri, sans-serif; font-size:16px;
+    background:rgba(0,0,0,0.5); padding:10px; border-radius:8px;
+  }
 </style>
 </head>
 <body>
 <div id="namePopup">
   <div>Enter your name</div>
-  <input id="nameInput" maxlength="16" placeholder="Your Name">
+  <input id="nameInput" maxlength="16" />
   <button id="playBtn">Play</button>
 </div>
-<canvas id="game"></canvas>
+<canvas id="game" tabindex="1"></canvas>
+<div id="leaderboard"></div>
 <script>
-window.onload = function() {
-  const canvas = document.getElementById("game");
-  const ctx = canvas.getContext("2d");
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+const canvas = document.getElementById("game");
+canvas.width = 900; canvas.height = 600;
+canvas.focus();
+const ctx = canvas.getContext("2d");
 
-  const MAP_SIZE=3000, BOT_COUNT=20, FOOD_COUNT=1000, BORDER=50;
-  let player=null, bots=[], food=[], splitCells=[], keys={}, mouseX=0, mouseY=0;
+let mouseX = 0, mouseY = 0;
+let keys = {};
+let player = null;
+let bots = [];
+let food = [];
+const MAP_SIZE = 5000;
+const BOT_COUNT = 20;
+const FOOD_COUNT = 7000;
+const BORDER_THICKNESS = 50;
 
-  const rand=(min,max)=>Math.random()*(max-min)+min;
-  const randColor=()=>`hsl(${Math.floor(Math.random()*360)},70%,60%)`;
-  const randName=()=>["Nebula","Phantom","Orion","Venom","Nova","Titan","Echo","Rider","Vortex"][Math.floor(Math.random()*10)];
+// Utilities
+function rand(min,max){ return Math.random()*(max-min)+min; }
+function randColor(){ return `hsl(${Math.floor(Math.random()*360)},80%,60%)`; }
+function randName(){ const list=["Bot1","Bot2","Bot3","Bot4","Bot5","Bot6"]; return list[Math.floor(Math.random()*list.length)]; }
 
-  function createPlayer(name){return {name,x:MAP_SIZE/2,y:MAP_SIZE/2,size:40,color:randColor()};}
-  function createBot(){return {name:randName(),x:rand(0,MAP_SIZE),y:rand(0,MAP_SIZE),size:rand(50,150),color:randColor()};}
-  function createFood(){return {x:rand(0,MAP_SIZE),y:rand(0,MAP_SIZE),size:rand(3,8),color:randColor()};}
+// Create entities
+function createPlayer(name){ return { name, x:MAP_SIZE/2, y:MAP_SIZE/2, size:40, color:randColor(), speed:3 }; }
+function createBot(){ return { name:randName(), x:rand(0,MAP_SIZE), y:rand(0,MAP_SIZE), size:rand(80,1000), color:randColor(), speed:1.5 }; }
+function createFood(){ return { x:rand(0,MAP_SIZE), y:rand(0,MAP_SIZE), size:rand(3,8), color:randColor() }; }
 
-  function init(){
-    for(let i=0;i<FOOD_COUNT;i++) food.push(createFood());
-    for(let i=0;i<BOT_COUNT;i++) bots.push(createBot());
+function init(){
+  for(let i=0;i<BOT_COUNT;i++) bots.push(createBot());
+  for(let i=0;i<FOOD_COUNT;i++) food.push(createFood());
+}
+
+// Input
+window.addEventListener("mousemove", e=>{ mouseX=e.clientX; mouseY=e.clientY; });
+window.addEventListener("keydown", e=>keys[e.key.toLowerCase()]=true);
+window.addEventListener("keyup", e=>keys[e.key.toLowerCase()]=false);
+canvas.addEventListener("click", ()=>canvas.focus());
+
+const projectiles = [];
+const splitCells = [];
+
+// Update loop
+function update(){
+  if(!player) return;
+
+  // Movement
+  let speed = player.speed * (40/player.size); // bigger = slower
+  let dx=0, dy=0;
+  if(keys['w']) dy-=speed;
+  if(keys['s']) dy+=speed;
+  if(keys['a']) dx-=speed;
+  if(keys['d']) dx+=speed;
+  player.x += dx; player.y += dy;
+
+  // Food collision
+  for(let i=food.length-1;i>=0;i--){
+    const f = food[i];
+    if(Math.hypot(player.x-f.x, player.y-f.y)<player.size+f.size){
+      player.size += f.size*0.3;
+      food.splice(i,1);
+    }
   }
 
-  window.addEventListener("keydown", e=>keys[e.key.toLowerCase()]=true);
-  window.addEventListener("keyup", e=>keys[e.key.toLowerCase()]=false);
-  window.addEventListener("mousemove", e=>{mouseX=e.clientX; mouseY=e.clientY;});
-
-  function updatePlayer(){
-    if(!player) return;
-    const speed = 7 / Math.sqrt(player.size/40);
-    if(keys['w']) player.y -= speed;
-    if(keys['s']) player.y += speed;
-    if(keys['a']) player.x -= speed;
-    if(keys['d']) player.x += speed;
-    if(!(keys['w']||keys['a']||keys['s']||keys['d'])){
-      let dx = mouseX - canvas.width/2, dy = mouseY - canvas.height/2, dist = Math.hypot(dx,dy);
-      if(dist>1){dx/=dist; dy/=dist; player.x+=dx*speed; player.y+=dy*speed;}
-    }
-
+  // Bots AI
+  bots.forEach(b=>{
+    let angle = Math.random()*Math.PI*2;
+    b.x += Math.cos(angle)*b.speed;
+    b.y += Math.sin(angle)*b.speed;
+    // Eat food
     for(let i=food.length-1;i>=0;i--){
-      const f = food[i];
-      if(Math.hypot(player.x-f.x, player.y-f.y) < player.size+f.size){player.size+=f.size*0.3; food.splice(i,1);}
-    }
-
-    for(let i=bots.length-1;i>=0;i--){
-      const b = bots[i];
-      const d = Math.hypot(player.x-b.x, player.y-b.y);
-      if(d < player.size + b.size){
-        if(player.size > b.size*1.1){player.size += b.size*0.4; bots[i]=createBot();}
-        else if(b.size > player.size*1.1){player=createPlayer(player.name);}
+      if(Math.hypot(b.x-food[i].x,b.y-food[i].y)<b.size+food[i].size){
+        b.size += food[i].size*0.35;
+        food.splice(i,1);
       }
     }
-
-    if(player.x<BORDER || player.y<BORDER || player.x>MAP_SIZE-BORDER || player.y>MAP_SIZE-BORDER){
-      player.size -= 0.1;
-      player.x = Math.max(BORDER, Math.min(MAP_SIZE-BORDER, player.x));
-      player.y = Math.max(BORDER, Math.min(MAP_SIZE-BORDER, player.y));
+    // Eat player
+    let dist = Math.hypot(player.x-b.x, player.y-b.y);
+    if(dist<player.size+b.size){
+      if(player.size>b.size*1.1){ player.size+=b.size*0.4; Object.assign(b,createBot()); }
+      else if(b.size>player.size*1.1){ Object.assign(player,createPlayer(player.name)); }
     }
-  }
-
-  function updateBots(){
-    bots.forEach(b=>{
-      let target=food.reduce((a,c)=>Math.hypot(b.x-c.x,b.y-c.y)<Math.hypot(b.x-a.x,b.y-a.y)?c:a,food[0]||b);
-      let dx=target.x-b.x, dy=target.y-b.y, dist=Math.hypot(dx,dy);
-      if(dist>0){dx/=dist; dy/=dist; b.x+=dx*1.2; b.y+=dy*1.2;}
-      b.x = Math.max(BORDER, Math.min(MAP_SIZE-BORDER, b.x));
-      b.y = Math.max(BORDER, Math.min(MAP_SIZE-BORDER, b.y));
-    });
-  }
-
-  function handleSplitAndEject(){
-    if(keys[' ']){
-      const angle=Math.atan2(mouseY-canvas.height/2, mouseX-canvas.width/2);
-      const newSize=player.size/2;
-      if(newSize>10){splitCells.push({x:player.x,y:player.y,size:newSize,vx:Math.cos(angle)*20,vy:Math.sin(angle)*20,color:player.color});player.size=newSize;}
-      keys[' ']=false;
-    }
-    if(keys['e']){player.size -= Math.min(5, player.size*0.1); keys['e']=false;}
-    for(let i=splitCells.length-1;i>=0;i--){
-      const c=splitCells[i]; c.x+=c.vx; c.y+=c.vy; c.vx*=0.95; c.vy*=0.95;
-      for(let j=bots.length-1;j>=0;j--){
-        const b=bots[j]; const d=Math.hypot(c.x-b.x, c.y-b.y);
-        if(d < c.size + b.size){
-          if(c.size > b.size*1.1){c.size+=b.size*0.4; bots[j]=createBot(); splitCells.splice(i,1); break;}
-          else if(b.size > c.size*1.1){b.size += c.size; splitCells.splice(i,1); break;}
-        }
-      }
-      if(c.size<5) splitCells.splice(i,1);
-    }
-  }
-
-  function draw(){
-    if(!player) return;
-    const zoom=200/player.size;
-    ctx.setTransform(zoom,0,0,zoom,canvas.width/2-player.x*zoom,canvas.height/2-player.y*zoom);
-    ctx.clearRect(0,0,canvas.width/zoom,canvas.height/zoom);
-    ctx.strokeStyle="red"; ctx.lineWidth=BORDER*zoom; ctx.strokeRect(0,0,MAP_SIZE,MAP_SIZE);
-
-    food.forEach(f=>{ctx.fillStyle=f.color;ctx.beginPath();ctx.arc(f.x,f.y,f.size,0,Math.PI*2);ctx.fill();});
-    bots.forEach(b=>{ctx.fillStyle=b.color;ctx.beginPath();ctx.arc(b.x,b.y,b.size,0,Math.PI*2);ctx.fill(); ctx.fillStyle="white"; ctx.font=`${b.size/2}px Calibri`; ctx.textAlign="center"; ctx.fillText(b.name,b.x,b.y+5);});
-    splitCells.forEach(c=>{ctx.fillStyle=c.color;ctx.beginPath();ctx.arc(c.x,c.y,c.size,0,Math.PI*2);ctx.fill();});
-    ctx.fillStyle=player.color; ctx.beginPath();ctx.arc(player.x,player.y,player.size,0,Math.PI*2);ctx.fill();
-    ctx.fillStyle="white"; ctx.font=`${player.size/2}px Calibri`; ctx.textAlign="center"; ctx.fillText(player.name,player.x,player.y+5);
-  }
-
-  function loop(){ updatePlayer(); updateBots(); handleSplitAndEject(); draw(); requestAnimationFrame(loop); }
-
-  const playBtn=document.getElementById("playBtn");
-  playBtn.addEventListener("click", ()=>{
-    const name=document.getElementById("nameInput").value.trim();
-    if(!name) return;
-    player=createPlayer(name);
-    document.getElementById("namePopup").style.display="none";
-    init();
-    loop();
   });
+
+  // Border damage
+  if(player.x<BORDER_THICKNESS) player.size-=0.1;
+  if(player.x>MAP_SIZE-BORDER_THICKNESS) player.size-=0.1;
+  if(player.y<BORDER_THICKNESS) player.size-=0.1;
+  if(player.y>MAP_SIZE-BORDER_THICKNESS) player.size-=0.1;
+
+  // Keep player in map
+  player.x=Math.max(0,Math.min(MAP_SIZE,player.x));
+  player.y=Math.max(0,Math.min(MAP_SIZE,player.y));
+}
+
+// Draw loop
+function draw(){
+  if(!player) return;
+
+  // Clear
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // Zoom
+  let zoom = 200/player.size;
+  ctx.setTransform(zoom,0,0,zoom,canvas.width/2-player.x*zoom,canvas.height/2-player.y*zoom);
+
+  // Borders
+  ctx.fillStyle="red";
+  ctx.fillRect(0,0,BORDER_THICKNESS,MAP_SIZE);
+  ctx.fillRect(MAP_SIZE-BORDER_THICKNESS,0,BORDER_THICKNESS,MAP_SIZE);
+  ctx.fillRect(0,0,MAP_SIZE,BORDER_THICKNESS);
+  ctx.fillRect(0,MAP_SIZE-BORDER_THICKNESS,MAP_SIZE,BORDER_THICKNESS);
+
+  // Food
+  food.forEach(f=>{
+    ctx.fillStyle=f.color;
+    ctx.beginPath(); ctx.arc(f.x,f.y,f.size,0,Math.PI*2); ctx.fill();
+  });
+
+  // Bots
+  bots.forEach(b=>{
+    ctx.fillStyle=b.color; ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="white"; ctx.font=`${b.size/2}px Calibri`; ctx.textAlign="center"; ctx.fillText(b.name,b.x,b.y+5);
+  });
+
+  // Player
+  ctx.fillStyle=player.color; ctx.beginPath(); ctx.arc(player.x,player.y,player.size,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle="white"; ctx.font=`${player.size/2}px Calibri`; ctx.textAlign="center"; ctx.fillText(player.name,player.x,player.y+5);
+
+  // Leaderboard
+  const leaderboard=document.getElementById("leaderboard");
+  leaderboard.innerHTML=`<b>Leaderboard</b><br>${player.name}: ${Math.floor(player.size)}`;
+}
+
+// Game loop
+function loop(){ update(); draw(); requestAnimationFrame(loop); }
+
+// Play button
+document.getElementById("playBtn").onclick = ()=>{
+  let name=document.getElementById("nameInput").value.trim();
+  if(name.length<1) return;
+  player=createPlayer(name);
+  document.getElementById("namePopup").style.display="none";
+  init();
+  loop();
 };
 </script>
 </body>
 </html>
+
