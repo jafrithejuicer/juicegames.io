@@ -1,86 +1,154 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="UTF-8" />
-<title>Juice Games Agar.io Clone</title>
+<meta charset="UTF-8">
+<title>Juice Games - Agar.io Clone</title>
 <style>
-  html, body { margin:0; padding:0; overflow:hidden; background:#b7dcff; }
-  canvas { display:block; }
-  #namePopup {
-    position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7);
-    display:flex; align-items:center; justify-content:center; flex-direction:column;
-    font-family:Calibri, sans-serif; color:white; font-size:24px;
+  /* ----- Basic Styles ----- */
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #e0f2ff; /* Softer blue background */
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   }
-  #nameInput { padding:10px; font-size:20px; border-radius:8px; border:none; }
-  #playBtn { padding:10px 20px; margin-top:10px; background:#4CAF50; color:white; border:none; border-radius:8px; font-size:20px; cursor:pointer; }
+  canvas { display: block; }
+
+  /* ----- Name Popup ----- */
+  #namePopup {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0,0,0,0.7);
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column;
+    color: white; font-size: 22px;
+  }
+  #nameInput {
+    padding: 10px;
+    font-size: 20px;
+    border-radius: 6px;
+    border: none;
+    margin-top: 10px;
+  }
+  #playBtn {
+    padding: 10px 20px;
+    margin-top: 10px;
+    background: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 20px;
+  }
+  #playBtn:hover { background: #45a049; }
+
+  /* ----- Leaderboard ----- */
+  #leaderboard {
+    position: absolute;
+    top: 20px; left: 20px;
+    background: rgba(255,255,255,0.8);
+    padding: 10px;
+    border-radius: 8px;
+    font-size: 16px;
+    color: #333;
+    min-width: 120px;
+  }
+
+  /* ----- Ad Placeholder ----- */
+  .ad-placeholder {
+    position: absolute;
+    bottom: 10px; left: 50%;
+    transform: translateX(-50%);
+    background: #ddd;
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-size: 16px;
+    text-align: center;
+    color: #555;
+  }
 </style>
 </head>
 <body>
+
 <div id="namePopup">
-  <div>Enter your name</div>
-  <input id="nameInput" maxlength="16" />
+  <div>Enter your name:</div>
+  <input id="nameInput" maxlength="16" placeholder="Your Name">
   <button id="playBtn">Play</button>
 </div>
+
+<div id="leaderboard"></div>
+<div class="ad-placeholder">Ad Placeholder</div>
+
 <canvas id="game"></canvas>
+
 <script>
+/* ====== Game Setup ====== */
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
-canvas.width = 900;
-canvas.height = 600;
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
-let mouseX = 0, mouseY = 0;
-let keys = {};
 let player = null;
 let bots = [];
 let food = [];
 let projectiles = [];
 let splitCells = [];
+let mouseX = 0, mouseY = 0;
+let keys = {};
 const MAP_SIZE = 5000;
 const BOT_COUNT = 20;
 const FOOD_COUNT = 7000;
-const BORDER_THICKNESS = 30;
-const BORDER_DAMAGE = 0.12;
 
+/* ====== Utilities ====== */
 function rand(min,max){ return Math.random()*(max-min)+min; }
 function randColor(){ return `hsl(${Math.floor(Math.random()*360)},80%,60%)`; }
 function randName(){
-  const list = ["xXCasefunXx","Nebula","Phantom","Orion","Venom","Nova","Titan","Echo","Rider","Vortex","Comet","Zero","Flash"];
-  return list[Math.floor(Math.random()*list.length)];
+  const names = ["Nebula","Phantom","Orion","Venom","Nova","Titan","Echo","Rider","Vortex","Comet","Zero","Flash"];
+  return names[Math.floor(Math.random()*names.length)];
 }
 
+/* ====== Entity Creators ====== */
 function createPlayer(name){
   return { name, x: MAP_SIZE/2, y: MAP_SIZE/2, size: 40, color: randColor(), speed: 3 };
 }
-function createBot(){ return { name: randName(), x: rand(0,MAP_SIZE), y: rand(0,MAP_SIZE), size: rand(80,1000), color: randColor(), speed:1.5 }; }
-function createFood(){ return { x: rand(0,MAP_SIZE), y: rand(0,MAP_SIZE), size: rand(3,8), color: randColor() }; }
 
+function createBot(){
+  return { name: randName(), x: rand(0,MAP_SIZE), y: rand(0,MAP_SIZE), size: rand(80,1000), color: randColor(), speed: 1.5 };
+}
+
+function createFood(){
+  return { x: rand(0,MAP_SIZE), y: rand(0,MAP_SIZE), size: rand(3,8), color: randColor() };
+}
+
+/* ====== Init ====== */
 function init(){
   for(let i=0;i<BOT_COUNT;i++) bots.push(createBot());
   for(let i=0;i<FOOD_COUNT;i++) food.push(createFood());
 }
 
+/* ====== Game Loop ====== */
 function update(){
   if(!player) return;
 
   let targetX = player.x;
   let targetY = player.y;
 
-  // WASD
+  // WASD movement
   if(keys['w']) targetY -= player.speed;
   if(keys['s']) targetY += player.speed;
   if(keys['a']) targetX -= player.speed;
   if(keys['d']) targetX += player.speed;
 
-  // Cursor movement dominance
+  // Cursor movement if no keys
   if(!(keys['w']||keys['a']||keys['s']||keys['d'])){
     let dx = mouseX - canvas.width/2;
     let dy = mouseY - canvas.height/2;
     let dist = Math.hypot(dx,dy);
-    if(dist>1){ dx/=dist; dy/=dist; targetX += dx * player.speed; targetY += dy * player.speed; }
+    if(dist>1){ dx/=dist; dy/=dist; targetX+=dx*player.speed; targetY+=dy*player.speed; }
   }
 
-  player.x = targetX;
-  player.y = targetY;
+  player.x = targetX; player.y = targetY;
 
   // Eat food
   for(let i=food.length-1;i>=0;i--){
@@ -98,123 +166,72 @@ function update(){
     b.y += Math.sin(angle)*b.speed;
   });
 
-  // Projectiles collisions
-  for(let i=projectiles.length-1;i>=0;i--){
-    let p = projectiles[i];
-    p.x += p.vx; p.y += p.vy;
-
-    // Hit bots
-    for(let j=bots.length-1;j>=0;j--){
-      let b = bots[j];
-      let distToBot = Math.hypot(p.x-b.x, p.y-b.y);
-      if(distToBot < b.size){
-        b.size -= p.size;
-        if(b.size < 6) bots[j] = createBot();
-        projectiles.splice(i,1);
-        break;
+  // Eat bots
+  for(let i=bots.length-1;i>=0;i--){
+    let b = bots[i];
+    let dist = Math.hypot(player.x-b.x, player.y-b.y);
+    if(dist < player.size + b.size){
+      if(player.size > b.size*1.1){
+        player.size += b.size*0.4;
+        bots[i] = createBot();
+      } else if(b.size > player.size*1.1){
+        player = createPlayer(player.name); // player dies
       }
-    }
-
-    // Hit player
-    if(player && p.owner !== player){
-      let distToPlayer = Math.hypot(p.x-player.x, p.y-player.y);
-      if(distToPlayer < player.size){
-        player.size -= p.size;
-        if(player.size < 6) player = createPlayer(player.name);
-        projectiles.splice(i,1);
-      }
-    }
-  }
-
-  // Split cells
-  for(let i=splitCells.length-1;i>=0;i--){
-    let c = splitCells[i];
-    c.x += c.vx; c.y += c.vy;
-
-    // collision with bots
-    for(let j=bots.length-1;j>=0;j--){
-      let b = bots[j];
-      let distToBot = Math.hypot(c.x-b.x, c.y-b.y);
-      if(distToBot < c.size + b.size){
-        if(c.size > b.size*1.05){ c.size += b.size*0.7; bots[j] = createBot(); }
-        else { b.size += c.size*0.7; splitCells.splice(i,1); }
-        break;
-      }
-    }
-
-    // collision with player
-    let distToPlayer = Math.hypot(c.x-player.x, c.y-player.y);
-    if(distToPlayer < c.size + player.size){
-      if(c.size > player.size*1.05){ c.size += player.size*0.7; player = createPlayer(player.name); }
-      else { player.size += c.size*0.7; splitCells.splice(i,1); }
-    }
-  }
-
-  // Player border damage
-  if(player){
-    if(player.x < BORDER_THICKNESS || player.x > MAP_SIZE-BORDER_THICKNESS ||
-       player.y < BORDER_THICKNESS || player.y > MAP_SIZE-BORDER_THICKNESS){
-      player.size -= BORDER_DAMAGE;
-      if(player.size < 6) player = createPlayer(player.name);
     }
   }
 }
 
 function draw(){
   if(!player) return;
-
   let zoom = 200/player.size;
   ctx.setTransform(zoom,0,0,zoom, canvas.width/2 - player.x*zoom, canvas.height/2 - player.y*zoom);
   ctx.clearRect(0,0,canvas.width/zoom,canvas.height/zoom);
 
-  // Border
-  ctx.lineWidth = BORDER_THICKNESS;
-  ctx.strokeStyle = 'red';
-  ctx.strokeRect(BORDER_THICKNESS/2,BORDER_THICKNESS/2,MAP_SIZE-BORDER_THICKNESS,MAP_SIZE-BORDER_THICKNESS);
-
   // Food
-  food.forEach(f=>{ ctx.fillStyle=f.color; ctx.beginPath(); ctx.arc(f.x,f.y,f.size,0,Math.PI*2); ctx.fill(); });
+  food.forEach(f=>{
+    ctx.fillStyle = f.color;
+    ctx.beginPath(); ctx.arc(f.x,f.y,f.size,0,Math.PI*2); ctx.fill();
+  });
 
   // Bots
   bots.forEach(b=>{
-    ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle="white"; ctx.font=`${b.size/2}px Calibri`; ctx.textAlign="center"; ctx.fillText(b.name,b.x,b.y+5);
+    ctx.fillStyle = b.color;
+    ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="white";
+    ctx.font = `${b.size/2}px Calibri`;
+    ctx.textAlign="center";
+    ctx.fillText(b.name, b.x, b.y+5);
   });
 
   // Player
-  ctx.fillStyle = player.color; ctx.beginPath(); ctx.arc(player.x,player.y,player.size,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle="white"; ctx.font=`${player.size/2}px Calibri`; ctx.textAlign="center"; ctx.fillText(player.name,player.x,player.y+5);
+  ctx.fillStyle = player.color;
+  ctx.beginPath(); ctx.arc(player.x,player.y,player.size,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle="white";
+  ctx.font = `${player.size/2}px Calibri`;
+  ctx.textAlign="center";
+  ctx.fillText(player.name, player.x, player.y+5);
 }
 
-function loop(){ update(); draw(); requestAnimationFrame(loop); }
+/* ====== Leaderboard ====== */
+function updateLeaderboard(){
+  const lb = document.getElementById("leaderboard");
+  let list = [...bots];
+  if(player) list.push(player);
+  list.sort((a,b)=>b.size - a.size);
+  lb.innerHTML = list.slice(0,5).map((p,i)=>`${i===0?"👑 ":""}${p.name}: ${Math.floor(p.size)}`).join("<br>");
+}
 
-// Input
-window.addEventListener("mousemove", e=>{ mouseX = e.clientX; mouseY = e.clientY; });
-window.addEventListener("keydown", e=>{
-  keys[e.key.toLowerCase()] = true;
+function loop(){ update(); draw(); updateLeaderboard(); requestAnimationFrame(loop); }
 
-  // Eject → E key
-  if(e.key.toLowerCase() === "e" && player){
-    let angle = Math.atan2(mouseY-canvas.height/2, mouseX-canvas.width/2);
-    let sizeLost = player.size*0.25;
-    player.size -= sizeLost;
-    projectiles.push({ x:player.x, y:player.y, size:sizeLost, vx:Math.cos(angle)*20, vy:Math.sin(angle)*20, owner:player });
-  }
+/* ====== Input Handling ====== */
+window.addEventListener("mousemove", e=>{ mouseX=e.clientX; mouseY=e.clientY; });
+window.addEventListener("keydown", e=>{ keys[e.key.toLowerCase()]=true; });
+window.addEventListener("keyup", e=>{ keys[e.key.toLowerCase()]=false; });
 
-  // Split → Space
-  if(e.key === " " && player){
-    let newSize = player.size/2;
-    let angle = Math.atan2(mouseY-canvas.height/2, mouseX-canvas.width/2);
-    splitCells.push({ x:player.x, y:player.y, size:newSize, vx:Math.cos(angle)*30, vy:Math.sin(angle)*30 });
-    player.size = newSize;
-  }
-});
-window.addEventListener("keyup", e=> keys[e.key.toLowerCase()]=false);
-
-// Name input
-playBtn.onclick = ()=>{
+/* ====== Start Game ====== */
+document.getElementById("playBtn").onclick = ()=>{
   let name = document.getElementById("nameInput").value.trim();
-  if(name.length<1) return;
+  if(!name) return;
   player = createPlayer(name);
   document.getElementById("namePopup").style.display="none";
   init();
