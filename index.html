@@ -2,240 +2,216 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Juice Games - Agar.io Clone</title>
+<title>Agar.io Clone - Juice Games</title>
 <style>
-  /* ----- Basic Styles ----- */
-  html, body {
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    background: #e0f2ff; /* Softer blue background */
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  }
-  canvas { display: block; }
+html, body { margin:0; padding:0; overflow:hidden; background:#f0f8ff; font-family:Calibri, sans-serif; color:white; }
+canvas { display:block; }
 
-  /* ----- Name Popup ----- */
-  #namePopup {
-    position: fixed;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    background: rgba(0,0,0,0.7);
-    display: flex; align-items: center; justify-content: center;
-    flex-direction: column;
-    color: white; font-size: 22px;
-  }
-  #nameInput {
-    padding: 10px;
-    font-size: 20px;
-    border-radius: 6px;
-    border: none;
-    margin-top: 10px;
-  }
-  #playBtn {
-    padding: 10px 20px;
-    margin-top: 10px;
-    background: #4CAF50;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 20px;
-  }
-  #playBtn:hover { background: #45a049; }
+#leaderboard {
+  position:absolute; top:20px; left:20px;
+  background: rgba(0,0,0,0.5); padding:10px; border-radius:8px; font-size:16px; text-align:left;
+}
 
-  /* ----- Leaderboard ----- */
-  #leaderboard {
-    position: absolute;
-    top: 20px; left: 20px;
-    background: rgba(255,255,255,0.8);
-    padding: 10px;
-    border-radius: 8px;
-    font-size: 16px;
-    color: #333;
-    min-width: 120px;
-  }
+#minimap {
+  position:absolute; bottom:20px; right:20px;
+  width:200px; height:150px; background: rgba(0,0,0,0.5); border-radius:8px;
+}
 
-  /* ----- Ad Placeholder ----- */
-  .ad-placeholder {
-    position: absolute;
-    bottom: 10px; left: 50%;
-    transform: translateX(-50%);
-    background: #ddd;
-    padding: 10px 20px;
-    border-radius: 6px;
-    font-size: 16px;
-    text-align: center;
-    color: #555;
-  }
+#namePopup {
+  position: fixed; top:0; left:0; width:100%; height:100%;
+  background: rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center;
+  flex-direction:column; font-size:24px;
+}
+#nameInput { padding:10px; font-size:20px; border-radius:6px; border:none; }
+#playBtn { padding:10px 20px; margin-top:10px; background:#4CAF50; border:none; border-radius:6px; cursor:pointer; font-size:20px; color:white; }
+#playBtn:hover { background:#45a049; }
 </style>
 </head>
 <body>
-
 <div id="namePopup">
-  <div>Enter your name:</div>
+  <div>Enter your name</div>
   <input id="nameInput" maxlength="16" placeholder="Your Name">
   <button id="playBtn">Play</button>
 </div>
-
 <div id="leaderboard"></div>
-<div class="ad-placeholder">Ad Placeholder</div>
-
+<div id="minimap"></div>
 <canvas id="game"></canvas>
-
 <script>
-/* ====== Game Setup ====== */
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+const canvas=document.getElementById("game"), ctx=canvas.getContext("2d");
+canvas.width=window.innerWidth; canvas.height=window.innerHeight;
 
-let player = null;
-let bots = [];
-let food = [];
-let projectiles = [];
-let splitCells = [];
-let mouseX = 0, mouseY = 0;
-let keys = {};
-const MAP_SIZE = 5000;
-const BOT_COUNT = 20;
-const FOOD_COUNT = 7000;
+const MAP_SIZE=5000, BOT_COUNT=20, FOOD_COUNT=7000, BORDER_THICKNESS=50, BORDER_COLOR='red';
+let player=null, bots=[], food=[], splitCells=[], keys={}, mouseX=0, mouseY=0;
 
-/* ====== Utilities ====== */
+// Utility
 function rand(min,max){ return Math.random()*(max-min)+min; }
 function randColor(){ return `hsl(${Math.floor(Math.random()*360)},80%,60%)`; }
-function randName(){
-  const names = ["Nebula","Phantom","Orion","Venom","Nova","Titan","Echo","Rider","Vortex","Comet","Zero","Flash"];
-  return names[Math.floor(Math.random()*names.length)];
-}
+function randName(){ const n=["Nebula","Phantom","Orion","Venom","Nova","Titan","Echo","Rider","Vortex","Comet","Zero","Flash"]; return n[Math.floor(Math.random()*n.length)]; }
 
-/* ====== Entity Creators ====== */
-function createPlayer(name){
-  return { name, x: MAP_SIZE/2, y: MAP_SIZE/2, size: 40, color: randColor(), speed: 3 };
-}
+// Entities
+function createPlayer(name){ return {name, x:MAP_SIZE/2, y:MAP_SIZE/2, size:40, color:randColor(), speed:3, cells:[{x:MAP_SIZE/2,y:MAP_SIZE/2,size:40}]}; }
+function createBot(){ return {name:randName(), x:rand(0,MAP_SIZE), y:rand(0,MAP_SIZE), size:rand(80,300), color:randColor()}; }
+function createFood(){ return {x:rand(0,MAP_SIZE), y:rand(0,MAP_SIZE), size:rand(3,8), color:randColor()}; }
 
-function createBot(){
-  return { name: randName(), x: rand(0,MAP_SIZE), y: rand(0,MAP_SIZE), size: rand(80,1000), color: randColor(), speed: 1.5 };
-}
-
-function createFood(){
-  return { x: rand(0,MAP_SIZE), y: rand(0,MAP_SIZE), size: rand(3,8), color: randColor() };
-}
-
-/* ====== Init ====== */
+// Init
 function init(){
   for(let i=0;i<BOT_COUNT;i++) bots.push(createBot());
   for(let i=0;i<FOOD_COUNT;i++) food.push(createFood());
 }
 
-/* ====== Game Loop ====== */
-function update(){
+// Input
+window.addEventListener("mousemove",e=>mouseX=e.clientX);
+window.addEventListener("keydown",e=>keys[e.key.toLowerCase()]=true);
+window.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+
+// Movement
+function handleMovement(){
   if(!player) return;
-
-  let targetX = player.x;
-  let targetY = player.y;
-
-  // WASD movement
-  if(keys['w']) targetY -= player.speed;
-  if(keys['s']) targetY += player.speed;
-  if(keys['a']) targetX -= player.speed;
-  if(keys['d']) targetX += player.speed;
-
-  // Cursor movement if no keys
-  if(!(keys['w']||keys['a']||keys['s']||keys['d'])){
-    let dx = mouseX - canvas.width/2;
-    let dy = mouseY - canvas.height/2;
-    let dist = Math.hypot(dx,dy);
-    if(dist>1){ dx/=dist; dy/=dist; targetX+=dx*player.speed; targetY+=dy*player.speed; }
+  let dx=0, dy=0;
+  if(keys['w']) dy-=player.speed; if(keys['s']) dy+=player.speed;
+  if(keys['a']) dx-=player.speed; if(keys['d']) dx+=player.speed;
+  player.x+=dx; player.y+=dy;
+  // border damage
+  if(player.x<BORDER_THICKNESS||player.x>MAP_SIZE-BORDER_THICKNESS||player.y<BORDER_THICKNESS||player.y>MAP_SIZE-BORDER_THICKNESS){
+    player.size-=0.05;
+    if(player.size<6) player.size=40;
   }
+}
 
-  player.x = targetX; player.y = targetY;
-
-  // Eat food
+// Food
+function eatFood(){
   for(let i=food.length-1;i>=0;i--){
-    let f = food[i];
-    if(Math.hypot(player.x-f.x, player.y-f.y) < player.size+f.size){
-      player.size += f.size*0.3;
-      food.splice(i,1);
-    }
-  }
-
-  // Bots AI
-  bots.forEach(b=>{
-    let angle = Math.random()*Math.PI*2;
-    b.x += Math.cos(angle)*b.speed;
-    b.y += Math.sin(angle)*b.speed;
-  });
-
-  // Eat bots
-  for(let i=bots.length-1;i>=0;i--){
-    let b = bots[i];
-    let dist = Math.hypot(player.x-b.x, player.y-b.y);
-    if(dist < player.size + b.size){
-      if(player.size > b.size*1.1){
-        player.size += b.size*0.4;
-        bots[i] = createBot();
-      } else if(b.size > player.size*1.1){
-        player = createPlayer(player.name); // player dies
-      }
+    let f=food[i];
+    let d=Math.hypot(player.x-f.x,player.y-f.y);
+    if(d<player.size+f.size){
+      player.size+=f.size*0.3; food.splice(i,1);
     }
   }
 }
 
+// Bots AI
+function botsAI(){
+  bots.forEach(b=>{
+    let angle=rand(0,Math.PI*2);
+    b.x+=Math.cos(angle)*1.5; b.y+=Math.sin(angle)*1.5;
+  });
+}
+
+// Split/Eject Mechanics
+function handleSplitEject(){
+  splitCells.forEach((s,i)=>{
+    s.x+=s.vx; s.y+=s.vy; s.vx*=0.98; s.vy*=0.98;
+    // collide with bots
+    for(let j=bots.length-1;j>=0;j--){
+      let b=bots[j];
+      let d=Math.hypot(s.x-b.x, s.y-b.y);
+      if(d<s.size+b.size){
+        if(s.size>b.size){ s.size+=b.size*0.4; bots[j]=createBot(); }
+        else { b.size+=s.size*0.4; }
+      }
+    }
+  });
+  // Remove tiny cells
+  splitCells=splitCells.filter(s=>s.size>5);
+}
+
+// Player actions
+window.addEventListener("keydown",e=>{
+  if(!player) return;
+  // Eject mass
+  if(e.key.toLowerCase()==='e'){
+    let angle=Math.atan2(mouseY-canvas.height/2,mouseX-canvas.width/2);
+    let mass=player.size*0.1; player.size-=mass;
+    splitCells.push({x:player.x, y:player.y, size:mass, vx:Math.cos(angle)*10, vy:Math.sin(angle)*10});
+  }
+  // Split
+  if(e.key===' '){
+    let angle=Math.atan2(mouseY-canvas.height/2,mouseX-canvas.width/2);
+    let newSize=player.size/2;
+    player.size=newSize;
+    splitCells.push({x:player.x, y:player.y, size:newSize, vx:Math.cos(angle)*15, vy:Math.sin(angle)*15});
+  }
+});
+
+// Collisions
+function handleCollisions(){
+  for(let i=bots.length-1;i>=0;i--){
+    let b=bots[i];
+    let d=Math.hypot(player.x-b.x,player.y-b.y);
+    if(d<player.size+b.size){
+      if(player.size>b.size*1.1){ player.size+=b.size*0.4; bots[i]=createBot(); }
+      else if(b.size>player.size*1.1){ player=createPlayer(player.name); }
+    }
+  }
+}
+
+// Draw
 function draw(){
   if(!player) return;
-  let zoom = 200/player.size;
-  ctx.setTransform(zoom,0,0,zoom, canvas.width/2 - player.x*zoom, canvas.height/2 - player.y*zoom);
+  let zoom=200/player.size;
+  ctx.setTransform(zoom,0,0,zoom,canvas.width/2-player.x*zoom,canvas.height/2-player.y*zoom);
   ctx.clearRect(0,0,canvas.width/zoom,canvas.height/zoom);
 
+  // Borders
+  ctx.strokeStyle=BORDER_COLOR; ctx.lineWidth=BORDER_THICKNESS;
+  ctx.strokeRect(0,0,MAP_SIZE,MAP_SIZE);
+
   // Food
-  food.forEach(f=>{
-    ctx.fillStyle = f.color;
-    ctx.beginPath(); ctx.arc(f.x,f.y,f.size,0,Math.PI*2); ctx.fill();
-  });
+  food.forEach(f=>{ ctx.fillStyle=f.color; ctx.beginPath(); ctx.arc(f.x,f.y,f.size,0,Math.PI*2); ctx.fill(); });
 
   // Bots
   bots.forEach(b=>{
-    ctx.fillStyle = b.color;
-    ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle="white";
-    ctx.font = `${b.size/2}px Calibri`;
-    ctx.textAlign="center";
-    ctx.fillText(b.name, b.x, b.y+5);
+    ctx.fillStyle=b.color; ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="white"; ctx.font=`${b.size/2}px Calibri`; ctx.textAlign="center"; ctx.fillText(b.name,b.x,b.y+5);
   });
 
+  // Split Cells
+  splitCells.forEach(s=>{ ctx.fillStyle='lightgray'; ctx.beginPath(); ctx.arc(s.x,s.y,s.size,0,Math.PI*2); ctx.fill(); });
+
   // Player
-  ctx.fillStyle = player.color;
-  ctx.beginPath(); ctx.arc(player.x,player.y,player.size,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle="white";
-  ctx.font = `${player.size/2}px Calibri`;
-  ctx.textAlign="center";
-  ctx.fillText(player.name, player.x, player.y+5);
+  ctx.fillStyle=player.color; ctx.beginPath(); ctx.arc(player.x,player.y,player.size,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle="white"; ctx.font=`${player.size/2}px Calibri`; ctx.textAlign="center"; ctx.fillText(player.name,player.x,player.y+5);
+
+  drawMinimap();
 }
 
-/* ====== Leaderboard ====== */
+// Leaderboard
 function updateLeaderboard(){
-  const lb = document.getElementById("leaderboard");
-  let list = [...bots];
-  if(player) list.push(player);
-  list.sort((a,b)=>b.size - a.size);
-  lb.innerHTML = list.slice(0,5).map((p,i)=>`${i===0?"👑 ":""}${p.name}: ${Math.floor(p.size)}`).join("<br>");
+  const lb=document.getElementById("leaderboard");
+  let list=[...bots]; if(player) list.push(player);
+  list.sort((a,b)=>b.size-a.size);
+  lb.innerHTML=list.slice(0,5).map((p,i)=>`${i===0?"👑 ":""}${p.name}: ${Math.floor(p.size)}`).join("<br>");
 }
 
-function loop(){ update(); draw(); updateLeaderboard(); requestAnimationFrame(loop); }
+// Minimap
+function drawMinimap(){
+  const mm=document.getElementById("minimap");
+  const mmCtx=mm.getContext('2d');
+  mmCtx.clearRect(0,0,mm.width,mm.height);
+  const scaleX=mm.width/MAP_SIZE, scaleY=mm.height/MAP_SIZE;
+  // Player
+  mmCtx.fillStyle='white';
+  mmCtx.fillRect(player.x*scaleX-2,player.y*scaleY-2,4,4);
+  // Bots
+  bots.forEach(b=>{ mmCtx.fillStyle='yellow'; mmCtx.fillRect(b.x*scaleX-2,b.y*scaleY-2,4,4); });
+  // Food
+  food.slice(0,500).forEach(f=>{ mmCtx.fillStyle='green'; mmCtx.fillRect(f.x*scaleX-1,f.y*scaleY-1,2,2); });
+}
 
-/* ====== Input Handling ====== */
-window.addEventListener("mousemove", e=>{ mouseX=e.clientX; mouseY=e.clientY; });
-window.addEventListener("keydown", e=>{ keys[e.key.toLowerCase()]=true; });
-window.addEventListener("keyup", e=>{ keys[e.key.toLowerCase()]=false; });
+// Loop
+function loop(){
+  handleMovement(); eatFood(); botsAI(); handleSplitEject(); handleCollisions();
+  draw(); updateLeaderboard();
+  requestAnimationFrame(loop);
+}
 
-/* ====== Start Game ====== */
-document.getElementById("playBtn").onclick = ()=>{
-  let name = document.getElementById("nameInput").value.trim();
+// Game Start
+document.getElementById("playBtn").onclick=()=>{
+  let name=document.getElementById("nameInput").value.trim();
   if(!name) return;
-  player = createPlayer(name);
+  player=createPlayer(name);
   document.getElementById("namePopup").style.display="none";
-  init();
-  loop();
+  init(); loop();
 };
 </script>
 </body>
