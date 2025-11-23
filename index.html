@@ -2,16 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Agar.io Clone - Juice Games</title>
+<title>Agar.io Clone</title>
 <style>
-html, body { margin:0; padding:0; overflow:hidden; background:#f0f8ff; font-family:Calibri, sans-serif; color:white; }
+html, body { margin:0; padding:0; overflow:hidden; background:#b7dcff; font-family:Calibri,sans-serif; }
 canvas { display:block; }
-#leaderboard { position:absolute; top:20px; left:20px; background: rgba(0,0,0,0.5); padding:10px; border-radius:8px; font-size:16px; text-align:left; }
-#minimap { position:absolute; bottom:20px; right:20px; width:200px; height:150px; background: rgba(0,0,0,0.5); border-radius:8px; }
-#namePopup { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center; flex-direction:column; font-size:24px; }
+#namePopup {
+  position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7);
+  display:flex; align-items:center; justify-content:center; flex-direction:column; color:white; font-size:24px;
+}
 #nameInput { padding:10px; font-size:20px; border-radius:6px; border:none; }
 #playBtn { padding:10px 20px; margin-top:10px; background:#4CAF50; border:none; border-radius:6px; cursor:pointer; font-size:20px; color:white; }
-#playBtn:hover { background:#45a049; }
+#leaderboard { position:absolute; top:20px; left:20px; background:rgba(0,0,0,0.5); padding:10px; border-radius:8px; font-size:16px; color:white; }
 </style>
 </head>
 <body>
@@ -21,154 +22,166 @@ canvas { display:block; }
   <button id="playBtn">Play</button>
 </div>
 <div id="leaderboard"></div>
-<div id="minimap"></div>
 <canvas id="game"></canvas>
 <script>
 const canvas=document.getElementById("game"), ctx=canvas.getContext("2d");
 canvas.width=window.innerWidth; canvas.height=window.innerHeight;
 
-const MAP_SIZE=5000, BOT_COUNT=20, FOOD_COUNT=7000, BORDER_THICKNESS=50, BORDER_COLOR='red';
+const MAP_SIZE=3000, FOOD_COUNT=2000, BOT_COUNT=10;
+const BORDER_THICKNESS = 30;
+
 let player=null, bots=[], food=[], splitCells=[], keys={}, mouseX=0, mouseY=0;
 
-function rand(min,max){ return Math.random()*(max-min)+min; }
-function randColor(){ return `hsl(${Math.floor(Math.random()*360)},80%,60%)`; }
-function randName(){ const n=["Nebula","Phantom","Orion","Venom","Nova","Titan","Echo","Rider","Vortex","Comet","Zero","Flash"]; return n[Math.floor(Math.random()*n.length)]; }
+// helpers
+const rand=(min,max)=>Math.random()*(max-min)+min;
+const randColor=()=>`hsl(${Math.floor(Math.random()*360)},70%,60%)`;
+const randName=()=>["Nebula","Phantom","Orion","Venom","Nova","Titan","Echo","Rider","Vortex"].sort(()=>0.5-Math.random())[0];
 
-function createPlayer(name){ return {name, x:MAP_SIZE/2, y:MAP_SIZE/2, size:40, color:randColor()}; }
-function createBot(){ return {name:randName(), x:rand(0,MAP_SIZE), y:rand(0,MAP_SIZE), size:rand(80,300), color:randColor()}; }
-function createFood(){ return {x:rand(0,MAP_SIZE), y:rand(0,MAP_SIZE), size:rand(3,8), color:randColor()}; }
+function createPlayer(name){ return {name,x:MAP_SIZE/2,y:MAP_SIZE/2,size:40,color:randColor()}; }
+function createBot(){ return {name:randName(),x:rand(0,MAP_SIZE),y:rand(0,MAP_SIZE),size:rand(50,150),color:randColor()}; }
+function createFood(){ return {x:rand(0,MAP_SIZE),y:rand(0,MAP_SIZE),size:rand(3,8),color:randColor()}; }
 
 function init(){
-  for(let i=0;i<BOT_COUNT;i++) bots.push(createBot());
   for(let i=0;i<FOOD_COUNT;i++) food.push(createFood());
+  for(let i=0;i<BOT_COUNT;i++) bots.push(createBot());
 }
 
-window.addEventListener("mousemove",e=>mouseX=e.clientX);
+// movement
 window.addEventListener("keydown",e=>keys[e.key.toLowerCase()]=true);
 window.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+window.addEventListener("mousemove",e=>mouseX=e.clientX,mouseY=e.clientY);
 
-function movePlayer(){
+function updatePlayer(){
   if(!player) return;
-  let dx=0, dy=0;
-  if(keys['w']) dy-=player.size>200?1:player.size/50; 
-  if(keys['s']) dy+=player.size>200?1:player.size/50;
-  if(keys['a']) dx-=player.size>200?1:player.size/50;
-  if(keys['d']) dx+=player.size>200?1:player.size/50;
 
-  player.x+=dx*player.size/40; player.y+=dy*player.size/40;
+  // speed decreases as player grows
+  const speed = 7 / Math.sqrt(player.size/40); 
 
-  // border damage
-  if(player.x<BORDER_THICKNESS||player.x>MAP_SIZE-BORDER_THICKNESS||player.y<BORDER_THICKNESS||player.y>MAP_SIZE-BORDER_THICKNESS){
-    player.size-=0.05;
-    if(player.size<6) player.size=40;
-  }
-}
+  if(keys['w']) player.y-=speed;
+  if(keys['s']) player.y+=speed;
+  if(keys['a']) player.x-=speed;
+  if(keys['d']) player.x+=speed;
 
-function eatFood(){
+  // eat food
   for(let i=food.length-1;i>=0;i--){
-    let f=food[i];
-    let d=Math.hypot(player.x-f.x,player.y-f.y);
-    if(d<player.size+f.size){
-      player.size+=f.size*0.3;
-      food.splice(i,1);
-    }
+    const f=food[i];
+    const d=Math.hypot(player.x-f.x,player.y-f.y);
+    if(d<player.size+f.size){ player.size+=f.size*0.3; food.splice(i,1); }
   }
-}
 
-function botsAI(){
-  bots.forEach(b=>{
-    let angle=Math.random()*Math.PI*2;
-    b.x+=Math.cos(angle)*1.5; b.y+=Math.sin(angle)*1.5;
-  });
-}
-
-function handleSplitEject(){
-  splitCells.forEach((s,i)=>{
-    s.x+=s.vx; s.y+=s.vy; s.vx*=0.98; s.vy*=0.98;
-    for(let j=bots.length-1;j>=0;j--){
-      let b=bots[j];
-      let d=Math.hypot(s.x-b.x, s.y-b.y);
-      if(d<s.size+b.size){
-        if(s.size>b.size){ s.size+=b.size*0.4; bots[j]=createBot(); }
-        else{ b.size+=s.size*0.4; }
-      }
-    }
-  });
-  splitCells=splitCells.filter(s=>s.size>5);
-}
-
-window.addEventListener("keydown",e=>{
-  if(!player) return;
-  if(e.key.toLowerCase()==='e'){
-    let angle=Math.atan2(mouseY-canvas.height/2,mouseX-canvas.width/2);
-    let mass=player.size*0.1; player.size-=mass;
-    splitCells.push({x:player.x, y:player.y, size:mass, vx:Math.cos(angle)*10, vy:Math.sin(angle)*10});
-  }
-  if(e.key===' '){
-    let angle=Math.atan2(mouseY-canvas.height/2,mouseX-canvas.width/2);
-    let newSize=player.size/2; player.size=newSize;
-    splitCells.push({x:player.x, y:player.y, size:newSize, vx:Math.cos(angle)*15, vy:Math.sin(angle)*15});
-  }
-});
-
-function handleCollisions(){
+  // bots collisions
   for(let i=bots.length-1;i>=0;i--){
-    let b=bots[i];
-    let d=Math.hypot(player.x-b.x,player.y-b.y);
+    const b=bots[i];
+    const d=Math.hypot(player.x-b.x,player.y-b.y);
     if(d<player.size+b.size){
       if(player.size>b.size*1.1){ player.size+=b.size*0.4; bots[i]=createBot(); }
       else if(b.size>player.size*1.1){ player=createPlayer(player.name); }
     }
   }
+
+  // borders
+  if(player.x<BORDER_THICKNESS){ player.x=BORDER_THICKNESS; player.size-=0.3; }
+  if(player.y<BORDER_THICKNESS){ player.y=BORDER_THICKNESS; player.size-=0.3; }
+  if(player.x>MAP_SIZE-BORDER_THICKNESS){ player.x=MAP_SIZE-BORDER_THICKNESS; player.size-=0.3; }
+  if(player.y>MAP_SIZE-BORDER_THICKNESS){ player.y=MAP_SIZE-BORDER_THICKNESS; player.size-=0.3; }
+
+  if(player.size<10) player=createPlayer(player.name); // respawn if too small
+}
+
+function updateBots(){
+  bots.forEach(b=>{
+    let angle=Math.random()*Math.PI*2;
+    b.x+=Math.cos(angle)*1.5; b.y+=Math.sin(angle)*1.5;
+    if(b.x<BORDER_THICKNESS) b.x=BORDER_THICKNESS;
+    if(b.y<BORDER_THICKNESS) b.y=BORDER_THICKNESS;
+    if(b.x>MAP_SIZE-BORDER_THICKNESS) b.x=MAP_SIZE-BORDER_THICKNESS;
+    if(b.y>MAP_SIZE-BORDER_THICKNESS) b.y=MAP_SIZE-BORDER_THICKNESS;
+  });
+}
+
+// split cells and ejects
+function handleSplitAndEject(){
+  // SPACE to split
+  if(keys[' ']){
+    const angle = Math.atan2(mouseY-canvas.height/2, mouseX-canvas.width/2);
+    const newSize = player.size/2;
+    if(newSize>10){
+      splitCells.push({x:player.x,y:player.y,size:newSize,vx:Math.cos(angle)*20,vy:Math.sin(angle)*20,color:player.color});
+      player.size=newSize;
+    }
+    keys[' ']=false; // prevent continuous splitting
+  }
+  // E to eject
+  if(keys['e']){
+    // simple eject effect: just subtract size slightly
+    player.size-=Math.min(5, player.size*0.1);
+    keys['e']=false;
+  }
+
+  // move split cells
+  for(let i=splitCells.length-1;i>=0;i--){
+    const c=splitCells[i];
+    c.x+=c.vx; c.y+=c.vy;
+    c.vx*=0.95; c.vy*=0.95; // friction
+    // collide with bots
+    for(let j=bots.length-1;j>=0;j--){
+      const b=bots[j];
+      const d=Math.hypot(c.x-b.x,c.y-b.y);
+      if(d<c.size+b.size){
+        if(c.size>b.size*1.1){ c.size+=b.size*0.4; bots[j]=createBot(); splitCells.splice(i,1); break; }
+        else if(b.size>c.size*1.1){ b.size+=c.size; splitCells.splice(i,1); break; }
+      }
+    }
+    if(c.size<5) splitCells.splice(i,1);
+  }
+}
+
+function drawLeaderboard(){
+  const lb=document.getElementById("leaderboard");
+  const all=[player,...bots].sort((a,b)=>b.size-a.size).slice(0,5);
+  let html="Leaderboard:<br>";
+  all.forEach((p,i)=>{ html+=`${i==0?"👑 ":""}${p.name}: ${Math.floor(p.size)}<br>`; });
+  lb.innerHTML=html;
+}
+
+function loop(){
+  updatePlayer(); updateBots(); handleSplitAndEject(); draw(); drawLeaderboard();
+  requestAnimationFrame(loop);
 }
 
 function draw(){
   if(!player) return;
-  let zoom=200/player.size;
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  const zoom=200/player.size;
   ctx.setTransform(zoom,0,0,zoom,canvas.width/2-player.x*zoom,canvas.height/2-player.y*zoom);
-  ctx.clearRect(0,0,canvas.width/zoom,canvas.height/zoom);
 
-  // Borders
-  ctx.strokeStyle=BORDER_COLOR; ctx.lineWidth=BORDER_THICKNESS; ctx.strokeRect(0,0,MAP_SIZE,MAP_SIZE);
+  // borders
+  ctx.strokeStyle="red"; ctx.lineWidth=BORDER_THICKNESS*zoom;
+  ctx.strokeRect(0,0,MAP_SIZE,MAP_SIZE);
 
-  // Food
+  // food
   food.forEach(f=>{ ctx.fillStyle=f.color; ctx.beginPath(); ctx.arc(f.x,f.y,f.size,0,Math.PI*2); ctx.fill(); });
 
-  // Bots
-  bots.forEach(b=>{ ctx.fillStyle=b.color; ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle="white"; ctx.font=`${b.size/2}px Calibri`; ctx.textAlign="center"; ctx.fillText(b.name,b.x,b.y+5); });
+  // bots
+  bots.forEach(b=>{
+    ctx.fillStyle=b.color; ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="white"; ctx.font=`${b.size/2}px Calibri`; ctx.textAlign="center"; ctx.fillText(b.name,b.x,b.y+5);
+  });
 
-  // Split Cells
-  splitCells.forEach(s=>{ ctx.fillStyle='lightgray'; ctx.beginPath(); ctx.arc(s.x,s.y,s.size,0,Math.PI*2); ctx.fill(); });
+  // split cells
+  splitCells.forEach(c=>{
+    ctx.fillStyle=c.color; ctx.beginPath(); ctx.arc(c.x,c.y,c.size,0,Math.PI*2); ctx.fill();
+  });
 
-  // Player
+  // player
   ctx.fillStyle=player.color; ctx.beginPath(); ctx.arc(player.x,player.y,player.size,0,Math.PI*2); ctx.fill();
   ctx.fillStyle="white"; ctx.font=`${player.size/2}px Calibri`; ctx.textAlign="center"; ctx.fillText(player.name,player.x,player.y+5);
-
-  drawMinimap();
 }
-
-function updateLeaderboard(){
-  const lb=document.getElementById("leaderboard");
-  let list=[...bots]; if(player) list.push(player);
-  list.sort((a,b)=>b.size-a.size);
-  lb.innerHTML=list.slice(0,5).map((p,i)=>`${i===0?"👑 ":""}${p.name}: ${Math.floor(p.size)}`).join("<br>");
-}
-
-function drawMinimap(){
-  const mm=document.getElementById("minimap");
-  const mmCtx=mm.getContext('2d');
-  mmCtx.clearRect(0,0,mm.width,mm.height);
-  const scaleX=mm.width/MAP_SIZE, scaleY=mm.height/MAP_SIZE;
-  mmCtx.fillStyle='white'; mmCtx.fillRect(player.x*scaleX-2,player.y*scaleY-2,4,4);
-  bots.forEach(b=>{ mmCtx.fillStyle='yellow'; mmCtx.fillRect(b.x*scaleX-2,b.y*scaleY-2,4,4); });
-  food.slice(0,500).forEach(f=>{ mmCtx.fillStyle='green'; mmCtx.fillRect(f.x*scaleX-1,f.y*scaleY-1,2,2); });
-}
-
-function loop(){ movePlayer(); eatFood(); botsAI(); handleSplitEject(); handleCollisions(); draw(); updateLeaderboard(); requestAnimationFrame(loop); }
 
 document.getElementById("playBtn").onclick=()=>{
-  let name=document.getElementById("nameInput").value.trim();
+  const name=document.getElementById("nameInput").value.trim();
   if(!name) return;
   player=createPlayer(name);
   document.getElementById("namePopup").style.display="none";
@@ -177,3 +190,4 @@ document.getElementById("playBtn").onclick=()=>{
 </script>
 </body>
 </html>
+
