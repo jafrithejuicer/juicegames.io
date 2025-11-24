@@ -1,418 +1,328 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<title>Juice Games .io — updated</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Juice Games</title>
 <style>
-  html,body{margin:0;padding:0;overflow:hidden;height:100%;background:#fff;}
-  canvas{display:block;background:#fff;}
-  #leaderboard{position:fixed;top:10px;right:10px;background:rgba(0,0,0,0.5);padding:10px;border-radius:8px;color:white;font-family:Calibri, sans-serif;font-size:14px;z-index:20;}
-  #namePopup{
-    position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);
-    display:flex;align-items:center;justify-content:center;flex-direction:column;font-family:Calibri,sans-serif;color:white;font-size:24px;z-index:30;
-  }
-  #nameInput,#colorInput{padding:10px;font-size:18px;border-radius:8px;border:none;margin-top:8px;}
-  #playBtn{padding:10px 20px;margin-top:10px;background:#4CAF50;color:white;border:none;border-radius:8px;cursor:pointer;font-size:18px;}
-  #colorLabel{margin-top:8px;font-size:14px;}
+  body { margin:0; font-family: Calibri, sans-serif; background:#f0f0f0; overflow:hidden; }
+  #gameContainer { position: relative; width: 100vw; height: 100vh; background: #fff; }
+  canvas { display:block; background:#fdfdfd; margin:0 auto; }
+
+  /* Fullscreen / Minimize buttons */
+  #controls { position:absolute; top:10px; right:10px; z-index:1000; }
+  .btn { padding:8px 12px; margin-left:5px; background:#4CAF50; color:white; border:none; cursor:pointer; border-radius:4px; }
+
+  /* Upcoming games panel */
+  #upcoming { display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:#e0e0e0; z-index:900; padding:20px; overflow-y:auto; }
+  #upcoming h2 { text-align:center; }
+  .gameCard { background:white; padding:10px; margin:10px; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.2); text-align:center; font-weight:bold; }
+
+  /* Ad placeholders */
+  #adLeft, #adRight { position:absolute; top:0; width:120px; height:100%; background:#ccc; z-index:800; text-align:center; line-height:2; font-weight:bold; }
+  #adLeft { left:0; }
+  #adRight { right:0; }
+  #adBottom { position:absolute; bottom:0; left:0; width:100%; height:90px; background:#ccc; z-index:800; text-align:center; line-height:4; font-weight:bold; }
+
+  /* Minimap */
+  #minimap { position:absolute; bottom:100px; right:10px; width:200px; height:200px; background:rgba(0,0,0,0.3); border:2px solid red; z-index:900; }
+
+  /* Leaderboard */
+  #leaderboard { position:absolute; top:50px; right:10px; width:200px; background:rgba(0,0,0,0.3); color:white; padding:10px; border-radius:8px; z-index:900; }
 </style>
 </head>
 <body>
-  <div id="namePopup">
-    <div>Enter your name</div>
-    <input id="nameInput" maxlength="16" placeholder="Name" />
-    <label id="colorLabel">Choose Blob Color:</label>
-    <input id="colorInput" type="color" value="#00ccff" />
-    <button id="playBtn">Play</button>
+
+<div id="gameContainer">
+  <canvas id="game"></canvas>
+
+  <div id="controls">
+    <button class="btn" onclick="minimizeGame()">Minimize</button>
+    <button class="btn" onclick="fullscreenGame()">Fullscreen</button>
   </div>
 
-  <canvas id="game"></canvas>
+  <div id="adLeft">Ad Left</div>
+  <div id="adRight">Ad Right</div>
+  <div id="adBottom">Ad Bottom</div>
+
+  <div id="upcoming">
+    <h2>Upcoming Games</h2>
+    <div class="gameCard">Slither.io</div>
+    <div class="gameCard">Diep.io</div>
+    <div class="gameCard">Paper.io</div>
+    <div class="gameCard">Agar.io</div>
+  </div>
+
+  <div id="minimap"></div>
   <div id="leaderboard"></div>
+</div>
 
 <script>
-/* --- Configurable settings --- */
-const MAP_SIZE = 50000;           // 10× bigger map
-const BOT_COUNT = 120;            // more bots
-const FOOD_COUNT = 50000;         // more food (heavy but requested)
-const BORDER = 50;
-
-/* --- Canvas setup --- */
+const gameContainer = document.getElementById('gameContainer');
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-function resize(){ canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
-window.addEventListener('resize', resize);
-resize();
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
-/* --- Game state --- */
-let keys = {}, mouse = {x:0,y:0};
+const upcoming = document.getElementById('upcoming');
+
+function minimizeGame() {
+  canvas.style.display = 'none';
+  document.getElementById('minimap').style.display = 'none';
+  document.getElementById('leaderboard').style.display = 'none';
+  upcoming.style.display = 'block';
+}
+
+function fullscreenGame() {
+  canvas.style.display = 'block';
+  document.getElementById('minimap').style.display = 'block';
+  document.getElementById('leaderboard').style.display = 'block';
+  upcoming.style.display = 'none';
+}
+
+// GAME LOGIC
+let mouseX = 0, mouseY = 0;
+let keys = {};
 let player = null;
-let bots = [], food = [], projectiles = [], splitCells = [];
+let bots = [];
+let food = [];
+let splitCells = [];
+const MAP_SIZE = 25000;
+const BOT_COUNT = 50;
+const FOOD_COUNT = 10000;
 
-/* --- Utilities --- */
+// UTIL
 function rand(min,max){ return Math.random()*(max-min)+min; }
-function randColor(){ return `hsl(${rand(0,360)},45%,68%)`; } // pastel-ish
+function randInt(min,max){ return Math.floor(rand(min,max)); }
+function randColor(){ return `hsl(${randInt(0,360)},80%,60%)`; }
 function randName(){
-  const names = ["Nebula","Phantom","Orion","Venom","Nova","Titan","Echo","Rider","Vortex","Comet","Zero","Flash","Astra","Polaris","Lyra","Cinder","Zephyr","Kairo","Nyx","Lumen"];
-  return names[Math.floor(Math.random()*names.length)];
+  const names = ["Nebula","Orion","Venom","Nova","Titan","Echo","Rider","Vortex","Comet","Zero","Flash"];
+  return names[randInt(0,names.length-1)];
 }
 
-/* --- Entities --- */
-function createPlayer(name,color){
-  return { name, x:MAP_SIZE/2, y:MAP_SIZE/2, size:40, color:color || '#00ccff', speed:6, score:0 }; // speed increased to 6
+// Player
+function createPlayer(name){
+  return {
+    name,
+    x: MAP_SIZE/2,
+    y: MAP_SIZE/2,
+    size: 40,
+    color: '#00ccff',
+    speed: 5,
+    splitCells: []
+  };
 }
+
+// Bot
 function createBot(){
-  return { name: randName(), x:rand(0,MAP_SIZE), y:rand(0,MAP_SIZE), size:rand(30,70), color:randColor(), speed:1.2, score:0, targetX:null, targetY:null };
-}
-function createFood(){
-  return { x:rand(0,MAP_SIZE), y:rand(0,MAP_SIZE), size:rand(3,6), color:randColor() };
+  return {
+    name: randName(),
+    x: rand(0,MAP_SIZE),
+    y: rand(0,MAP_SIZE),
+    size: rand(40,567),
+    color: randColor(),
+    speed: 2
+  };
 }
 
-/* --- Init (clears first) --- */
+// Food
+function createFood(){
+  return {
+    x: rand(0,MAP_SIZE),
+    y: rand(0,MAP_SIZE),
+    size: rand(3,8),
+    color: randColor()
+  };
+}
+
+// INIT
 function init(){
-  bots = [];
-  food = [];
-  projectiles = [];
-  splitCells = [];
   for(let i=0;i<BOT_COUNT;i++) bots.push(createBot());
   for(let i=0;i<FOOD_COUNT;i++) food.push(createFood());
 }
 
-/* --- Input --- */
-window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
-window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
-canvas.addEventListener('mousemove', e => {
-  const r = canvas.getBoundingClientRect();
-  mouse.x = e.clientX - r.left;
-  mouse.y = e.clientY - r.top;
-});
-canvas.addEventListener('click', ()=> canvas.focus());
-
-/* --- Update: movement, bots, collisions --- */
-function update(){
+function updatePlayerMovement(){
   if(!player) return;
+  let targetX = player.x;
+  let targetY = player.y;
 
-  // Movement (larger => slower) — player.speed raised
-  let speed = player.speed * (40 / player.size);
-  if(keys['w']) player.y -= speed;
-  if(keys['s']) player.y += speed;
-  if(keys['a']) player.x -= speed;
-  if(keys['d']) player.x += speed;
+  // Keyboard
+  if(keys['w']) targetY -= player.speed;
+  if(keys['s']) targetY += player.speed;
+  if(keys['a']) targetX -= player.speed;
+  if(keys['d']) targetX += player.speed;
 
-  // Eject (E) -> toward mouse
-  if(keys['e']){
-    keys['e'] = false;
-    const dx = mouse.x - canvas.width/2;
-    const dy = mouse.y - canvas.height/2;
-    const angle = Math.atan2(dy, dx);
-    const shotSize = Math.max(2, player.size * 0.05);
-    projectiles.push({ x: player.x + Math.cos(angle)*(player.size+5), y: player.y + Math.sin(angle)*(player.size+5), size: shotSize, vx: Math.cos(angle)*15, vy: Math.sin(angle)*15 });
-    player.size -= shotSize;
-    if(player.size < 2) Object.assign(player, createPlayer(player.name, player.color));
-  }
-
-  // Split (space) -> toward mouse, splitted cell follows player
-  if(keys[' ']){
-    keys[' '] = false;
-    const dx = mouse.x - canvas.width/2;
-    const dy = mouse.y - canvas.height/2;
-    const angle = Math.atan2(dy, dx);
-    const newSize = player.size / 2;
-    if(newSize >= 2){
-      // attach follow reference so it will follow owner
-      splitCells.push({ x: player.x + Math.cos(angle)*(player.size+5), y: player.y + Math.sin(angle)*(player.size+5), size: newSize, vx: Math.cos(angle)*10, vy: Math.sin(angle)*10, follow: player });
-      player.size = newSize;
-    } else {
-      // if too small, respawn player safe
-      Object.assign(player, createPlayer(player.name, player.color));
-    }
-  }
-
-  // Eat food (slower growth: small increment)
-  for(let i = food.length - 1; i >= 0; i--){
-    const f = food[i];
-    // player
-    if(Math.hypot(player.x - f.x, player.y - f.y) < player.size + f.size){
-      player.size += f.size * 0.02;               // slower growth from food
-      player.score += Math.floor(f.size * 0.02);
-      food.splice(i,1);
-      continue;
-    }
-    // bots (small growth too)
-    for(let b of bots){
-      if(Math.hypot(b.x - f.x, b.y - f.y) < b.size + f.size){
-        b.size += f.size * 0.02;
-        b.score += Math.floor(f.size * 0.02);
-        food.splice(i,1);
-        break;
-      }
-    }
-  }
-
-  // Bots AI: pick target and move, respawn behavior added
-  bots.forEach((b, idx) => {
-    // pick/refresh target occasionally
-    if(!b.targetX || Math.random() < 0.005){
-      b.targetX = rand(0, MAP_SIZE);
-      b.targetY = rand(0, MAP_SIZE);
-    }
-    // move toward target, but jitter/shiver slightly to look "fearful"
-    let dx = b.targetX - b.x, dy = b.targetY - b.y;
+  // Mouse movement
+  if(!(keys['w']||keys['a']||keys['s']||keys['d'])){
+    let dx = mouseX - canvas.width/2;
+    let dy = mouseY - canvas.height/2;
     let dist = Math.hypot(dx,dy);
-    if(dist > 1){
-      dx /= dist; dy /= dist;
-      // small random multiplier to produce shiver but not too much
-      const jitter = 0.6 + Math.random()*0.8;
-      b.x += dx * b.speed * jitter;
-      b.y += dy * b.speed * jitter;
-    }
-
-    // bots vs bots interactions (fight each other)
-    for(let j = bots.length - 1; j >= 0; j--){
-      if(j === idx) continue;
-      const other = bots[j];
-      const d = Math.hypot(b.x - other.x, b.y - other.y);
-      if(d < b.size + other.size){
-        if(b.size > other.size * 1.1){
-          b.size += other.size * 0.4;
-          b.score += Math.floor(other.size * 0.4);
-          // respawn the eaten bot
-          Object.assign(other, createBot());
-        } else if(other.size > b.size * 1.1){
-          Object.assign(b, createBot());
-        }
-      }
-    }
-
-    // bots vs player
-    const dP = Math.hypot(player.x - b.x, player.y - b.y);
-    if(dP < player.size + b.size){
-      if(player.size > b.size * 1.1){
-        player.size += b.size * 0.4;
-        player.score += Math.floor(b.size * 0.4);
-        Object.assign(b, createBot());
-      } else if(b.size > player.size * 1.1){
-        // player dies -> respawn
-        Object.assign(player, createPlayer(player.name, player.color));
-      }
-    }
-
-    // ensure bots stay on map
-    b.x = Math.max(0, Math.min(MAP_SIZE, b.x));
-    b.y = Math.max(0, Math.min(MAP_SIZE, b.y));
-  });
-
-  // Split cells follow owner and can grow if they kill bots; small speed to follow
-  for(let i = splitCells.length - 1; i >= 0; i--){
-    const c = splitCells[i];
-    // follow owner position smoothly
-    const fdx = c.follow.x - c.x, fdy = c.follow.y - c.y;
-    const fdist = Math.hypot(fdx, fdy);
-    if(fdist > 1){
-      c.x += (fdx / fdist) * 4.5;  // follow speed (fast enough)
-      c.y += (fdy / fdist) * 4.5;
-    }
-    // collision with bots
-    for(let j = bots.length - 1; j >= 0; j--){
-      const b = bots[j];
-      const d = Math.hypot(c.x - b.x, c.y - b.y);
-      if(d < c.size + b.size){
-        if(c.size > b.size){
-          c.size += b.size * 0.4;
-          // when split kills bot, the split's size increases and also it keeps following owner (owner doesn't auto-absorb)
-          Object.assign(b, createBot());
-        } else {
-          // split dies if eaten
-          splitCells.splice(i,1);
-          break;
-        }
-      }
-    }
-    // if split falls below 2 it vanishes
-    if(c.size < 2){
-      splitCells.splice(i,1);
-    }
+    if(dist>1){ dx/=dist; dy/=dist; targetX += dx*player.speed; targetY += dy*player.speed; }
   }
 
-  // projectiles move and hit bots
-  for(let i = projectiles.length - 1; i >= 0; i--){
-    const p = projectiles[i];
-    p.x += p.vx; p.y += p.vy;
-    // bounds: remove if far away
-    if(p.x < 0 || p.x > MAP_SIZE || p.y < 0 || p.y > MAP_SIZE){ projectiles.splice(i,1); continue; }
-    for(let j = bots.length - 1; j >= 0; j--){
-      const b = bots[j];
-      if(Math.hypot(p.x - b.x, p.y - b.y) < p.size + b.size){
-        if(p.size > b.size){
-          player.size += b.size * 0.4;
-          Object.assign(b, createBot());
-        } else {
-          b.size += p.size;
-        }
-        projectiles.splice(i,1);
-        break;
-      }
-    }
-  }
-
-  // clamp player
-  player.x = Math.max(0, Math.min(MAP_SIZE, player.x));
-  player.y = Math.max(0, Math.min(MAP_SIZE, player.y));
+  // Slow down as player grows
+  let speedFactor = Math.max(1, player.size/50);
+  player.x += (targetX - player.x)/speedFactor;
+  player.y += (targetY - player.y)/speedFactor;
 }
 
-/* --- Draw: grid, entities, minimap, leaderboard, text in Calibri + white --- */
-function draw(){
-  if(!player) return;
+// Split & Eject
+function eject(){
+  let angle = Math.atan2(mouseY-canvas.height/2, mouseX-canvas.width/2);
+  let sizeLost = player.size*0.25;
+  player.size -= sizeLost;
+  splitCells.push({ x:player.x, y:player.y, size:sizeLost, vx:Math.cos(angle)*15, vy:Math.sin(angle)*15 });
+}
 
+function split(){
+  if(player.size < 2) return;
+  let newSize = player.size/2;
+  let angle = Math.atan2(mouseY-canvas.height/2, mouseX-canvas.width/2);
+  splitCells.push({ x:player.x, y:player.y, size:newSize, vx:Math.cos(angle)*25, vy:Math.sin(angle)*25 });
+  player.size = newSize;
+}
+
+// Bots AI
+function updateBots(){
+  bots.forEach(b=>{
+    let angle = rand(0,Math.PI*2);
+    b.x += Math.cos(angle)*b.speed;
+    b.y += Math.sin(angle)*b.speed;
+
+    // Eat food
+    for(let i=food.length-1;i>=0;i--){
+      let f = food[i];
+      if(Math.hypot(b.x-f.x, b.y-f.y) < b.size+f.size){
+        b.size += f.size*0.1;
+        food.splice(i,1);
+      }
+    }
+
+    // Fight each other
+    for(let j=bots.length-1;j>=0;j--){
+      if(b===bots[j]) continue;
+      let other = bots[j];
+      let d = Math.hypot(b.x-other.x, b.y-other.y);
+      if(d < b.size && b.size > other.size*1.05){
+        b.size += other.size*0.4;
+        bots[j] = createBot();
+      }
+    }
+  });
+}
+
+// Update food for player
+function updateFood(){
+  for(let i=food.length-1;i>=0;i--){
+    let f = food[i];
+    if(Math.hypot(player.x-f.x, player.y-f.y) < player.size+f.size){
+      player.size += f.size*0.05;
+      food.splice(i,1);
+    }
+  }
+}
+
+// Draw
+function draw(){
   ctx.setTransform(1,0,0,1,0,0);
   ctx.clearRect(0,0,canvas.width,canvas.height);
+  let zoom = 200/player.size;
+  ctx.setTransform(zoom,0,0,zoom,canvas.width/2 - player.x*zoom, canvas.height/2 - player.y*zoom);
 
-  const offsetX = canvas.width / 2 - player.x;
-  const offsetY = canvas.height / 2 - player.y;
-
-  // background grid (thin subtle)
-  ctx.strokeStyle = "#efefef";
-  ctx.lineWidth = 1;
-  const step = 50;
-  // only draw visible grid lines for performance: compute visible bounds
-  const left = Math.max(0, Math.floor((player.x - canvas.width/2)/step) * step);
-  const right = Math.min(MAP_SIZE, Math.ceil((player.x + canvas.width/2)/step) * step);
-  const top = Math.max(0, Math.floor((player.y - canvas.height/2)/step) * step);
-  const bottom = Math.min(MAP_SIZE, Math.ceil((player.y + canvas.height/2)/step) * step);
-
-  for(let x = left; x <= right; x += step){
-    ctx.beginPath();
-    ctx.moveTo(x + offsetX, top + offsetY);
-    ctx.lineTo(x + offsetX, bottom + offsetY);
-    ctx.stroke();
-  }
-  for(let y = top; y <= bottom; y += step){
-    ctx.beginPath();
-    ctx.moveTo(left + offsetX, y + offsetY);
-    ctx.lineTo(right + offsetX, y + offsetY);
-    ctx.stroke();
-  }
-
-  // food
-  for(const f of food){
-    // quick cull: only draw if in view
-    const sx = f.x + offsetX, sy = f.y + offsetY;
-    if(sx < -10 || sx > canvas.width + 10 || sy < -10 || sy > canvas.height + 10) continue;
+  // Food
+  food.forEach(f=>{
     ctx.fillStyle = f.color;
-    ctx.beginPath();
-    ctx.arc(sx, sy, f.size, 0, Math.PI*2);
-    ctx.fill();
-  }
-
-  // bots
-  ctx.font = '14px Calibri';
-  for(const b of bots){
-    const sx = b.x + offsetX, sy = b.y + offsetY;
-    if(sx < -50 || sx > canvas.width + 50 || sy < -50 || sy > canvas.height + 50) continue;
-    ctx.fillStyle = b.color;
-    ctx.beginPath();
-    ctx.arc(sx, sy, b.size, 0, Math.PI*2);
-    ctx.fill();
-    ctx.fillStyle = 'white';
-    ctx.textAlign = 'center';
-    ctx.fillText(b.name, sx, sy + 5);
-  }
-
-  // split cells
-  for(const c of splitCells){
-    const sx = c.x + offsetX, sy = c.y + offsetY;
-    ctx.fillStyle = player.color;
-    ctx.beginPath();
-    ctx.arc(sx, sy, c.size, 0, Math.PI*2);
-    ctx.fill();
-  }
-
-  // projectiles
-  for(const p of projectiles){
-    const sx = p.x + offsetX, sy = p.y + offsetY;
-    ctx.fillStyle = player.color;
-    ctx.beginPath();
-    ctx.arc(sx, sy, p.size, 0, Math.PI*2);
-    ctx.fill();
-  }
-
-  // player (always centered)
-  ctx.fillStyle = player.color;
-  ctx.beginPath();
-  ctx.arc(canvas.width/2, canvas.height/2, player.size, 0, Math.PI*2);
-  ctx.fill();
-  // name + size in white Calibri
-  ctx.fillStyle = 'white';
-  ctx.font = '16px Calibri';
-  ctx.textAlign = 'center';
-  ctx.fillText(`${player.name} — ${Math.floor(player.size)}`, canvas.width/2, canvas.height/2 - player.size - 8);
-
-  // thick red border (draw relative to offset)
-  ctx.fillStyle = 'rgba(255,0,0,0.9)';
-  // left
-  ctx.fillRect(0 + offsetX, 0 + offsetY, BORDER, MAP_SIZE);
-  // right
-  ctx.fillRect(MAP_SIZE - BORDER + offsetX, 0 + offsetY, BORDER, MAP_SIZE);
-  // top
-  ctx.fillRect(0 + offsetX, 0 + offsetY, MAP_SIZE, BORDER);
-  // bottom
-  ctx.fillRect(0 + offsetX, MAP_SIZE - BORDER + offsetY, MAP_SIZE, BORDER);
-
-  // minimap (top-left small)
-  const miniW = 220, miniH = 140;
-  const miniX = 10, miniY = 10;
-  ctx.setTransform(1,0,0,1,0,0);
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
-  ctx.fillRect(miniX - 2, miniY - 2, miniW + 4, miniH + 4);
-  ctx.fillStyle = 'rgba(255,255,255,0.08)';
-  ctx.fillRect(miniX, miniY, miniW, miniH);
-  const scaleX = miniW / MAP_SIZE, scaleY = miniH / MAP_SIZE;
-  // draw bots small
-  for(const b of bots){
-    const bx = miniX + b.x * scaleX;
-    const by = miniY + b.y * scaleY;
-    ctx.fillStyle = 'orange';
-    ctx.fillRect(bx, by, 2, 2);
-  }
-  // player on minimap
-  ctx.fillStyle = 'cyan';
-  ctx.fillRect(miniX + player.x * scaleX - 3, miniY + player.y * scaleY - 3, 6, 6);
-
-  // leaderboard (top 10)
-  const leaderboard = document.getElementById('leaderboard');
-  const all = [player, ...bots].sort((a,b)=>b.size - a.size).slice(0,10);
-  leaderboard.innerHTML = `<b>Leaderboard</b><br>`;
-  all.forEach((p, i) => {
-    leaderboard.innerHTML += `${i+1}. ${p.name}: ${Math.floor(p.size)}<br>`;
+    ctx.beginPath(); ctx.arc(f.x,f.y,f.size,0,Math.PI*2); ctx.fill();
   });
 
-  // player rank & score display (bottom-left)
-  const rank = all.findIndex(x => x === player) + 1;
-  const scoreText = `Rank: ${rank || '—'}  Score: ${player.score || 0}`;
-  ctx.setTransform(1,0,0,1,0,0);
-  ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  ctx.fillRect(10, canvas.height - 40, 220, 30);
-  ctx.fillStyle = 'white';
-  ctx.font = '14px Calibri';
-  ctx.textAlign = 'left';
-  ctx.fillText(`${player.name}  ${scoreText}`, 18, canvas.height - 20);
+  // Bots
+  bots.forEach(b=>{
+    ctx.fillStyle = b.color;
+    ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="white";
+    ctx.font = `${Math.max(12,b.size/2)}px Calibri`;
+    ctx.textAlign="center";
+    ctx.fillText(b.name,b.x,b.y+5);
+  });
+
+  // Player
+  ctx.fillStyle = player.color;
+  ctx.beginPath(); ctx.arc(player.x,player.y,player.size,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle="white";
+  ctx.font = `${Math.max(12,player.size/2)}px Calibri`;
+  ctx.textAlign="center";
+  ctx.fillText(player.name,player.x,player.y+5);
+
+  // Split Cells
+  splitCells.forEach(c=>{
+    ctx.fillStyle = player.color;
+    ctx.beginPath(); ctx.arc(c.x,c.y,c.size,0,Math.PI*2); ctx.fill();
+  });
 }
 
-/* --- Game loop --- */
+// Minimap
+function drawMinimap(){
+  const mm = document.getElementById('minimap');
+  const mmCtx = mm.getContext('2d') || mm.getContext('2d');
+  mm.width = 200;
+  mm.height = 200;
+  mmCtx.clearRect(0,0,mm.width,mm.height);
+  const scale = mm.width/MAP_SIZE;
+  mmCtx.fillStyle='blue';
+  mmCtx.fillRect(player.x*scale-2, player.y*scale-2,4,4);
+  bots.forEach(b=>{
+    mmCtx.fillStyle='red';
+    mmCtx.fillRect(b.x*scale-1, b.y*scale-1,2,2);
+  });
+}
+
+// Leaderboard
+function drawLeaderboard(){
+  const lb = document.getElementById('leaderboard');
+  let topBots = bots.slice().sort((a,b)=>b.size-a.size).slice(0,10);
+  let html = `<strong>Leaderboard</strong><br>`;
+  topBots.forEach((b,i)=>{
+    html += `${i+1}. ${b.name} (${Math.floor(b.size)})<br>`;
+  });
+  html += `<br>Your Size: ${Math.floor(player.size)}`;
+  lb.innerHTML = html;
+}
+
+// Loop
 function loop(){
-  update();
+  updatePlayerMovement();
+  updateFood();
+  updateBots();
+
+  splitCells.forEach(c=>{
+    c.x += c.vx;
+    c.y += c.vy;
+  });
+
   draw();
+  drawMinimap();
+  drawLeaderboard();
+
   requestAnimationFrame(loop);
 }
 
-/* --- Play button hook --- */
-document.getElementById('playBtn').onclick = () => {
-  const name = document.getElementById('nameInput').value.trim();
-  if(!name) return;
-  const color = document.getElementById('colorInput').value;
-  player = createPlayer(name, color);
-  document.getElementById('namePopup').style.display = 'none';
+// Input
+window.addEventListener('mousemove', e=>{ mouseX = e.clientX; mouseY = e.clientY; });
+window.addEventListener('keydown', e=>{
+  keys[e.key.toLowerCase()] = true;
+  if(e.key.toLowerCase() === 'e') eject();
+  if(e.key === ' ') split();
+});
+window.addEventListener('keyup', e=> keys[e.key.toLowerCase()] = false);
+
+// Start
+document.addEventListener('DOMContentLoaded', ()=>{
+  let name = prompt("Enter your name") || "Player";
+  player = createPlayer(name);
   init();
   loop();
-};
+});
 </script>
+
 </body>
 </html>
